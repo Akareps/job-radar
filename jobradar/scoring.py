@@ -126,6 +126,16 @@ class Scorer:
                          for k, v in (self.cfg.get("pay_band_pts") or {}).items()}
         self._caps = {k: float(v) for k, v in (self.cfg.get("hard_caps") or {}).items()}
 
+        # Titles the user explicitly asked for, whose own words must not be
+        # read as a grade. "Staff Nurse" is the standard UK nursing grade and
+        # "Staff Accountant" the junior US accounting one, but `staff` is a
+        # senior marker in tech - so a nurse searching for exactly that title
+        # had every result capped as senior. `jobradar init` fills this in.
+        self._seniority_exempt = [
+            re.compile(pattern, re.I)
+            for pattern in (self.cfg.get("seniority_exempt_titles") or [])
+        ]
+
     # ------------------------------------------------------------------ #
 
     def classify_role(self, title: str, description: str = "") -> str:
@@ -213,7 +223,14 @@ class Scorer:
         if years is None:
             years = parse_min_years(desc)
             job.min_years_experience = years
-        seniority = classify_seniority(title, desc, years)
+        # Remove any exempt target title from the probe first. Subtracting
+        # rather than skipping keeps real grades readable: "Senior Staff
+        # Nurse" still reduces to "Senior" and classifies as senior, while a
+        # bare "Staff Nurse" falls through to the body and years.
+        probe = title
+        for exempt in self._seniority_exempt:
+            probe = exempt.sub(" ", probe)
+        seniority = classify_seniority(probe, desc, years)
         job.seniority = seniority
         sen_pts = float(self.cfg["seniority"].get(seniority, 0))
         parts["seniority"] = seniority

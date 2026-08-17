@@ -190,6 +190,12 @@ scoring:
     clearance: 10
     off_target: 5
 
+  # Titles whose own words must not be read as a seniority grade. `staff` means
+  # senior in tech but is the standard grade in UK nursing and the junior one in
+  # US accounting, so a nurse searching "Staff Nurse" had every result capped.
+  # `jobradar init` fills this from any target title containing a grade word.
+  seniority_exempt_titles: []
+
   skill_bonus_cap: 22
 
 # Replace these examples with skills from your own background.

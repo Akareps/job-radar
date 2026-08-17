@@ -10,6 +10,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from jobradar.models import Job
 from jobradar.scoring import Scorer  # noqa: E402
 from jobradar.wizard import (  # noqa: E402
     _apply, _default_seniority, _guess_families, _skill_pattern, _write_settings,
@@ -76,6 +77,41 @@ profile_path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-
 scorer = Scorer(profile_path)
 for title in titles:
     check(f"scorer accepts arbitrary target {title}", scorer.classify_role(title), "target_roles")
+
+# --- a grade word inside a title the user asked for is not a grade -----------
+# "Staff Nurse" is the standard UK nursing band and "Staff Accountant" the
+# junior US accounting one, but `staff` reads as senior in tech. Without the
+# exemption every result for those searches was classified senior and capped.
+graded = ["Staff Nurse", "Senior Care Assistant", "Registered Nurse"]
+graded_profile = yaml.safe_load(
+    (ROOT / "config" / "profile.example.yaml").read_text(encoding="utf-8"))
+_apply(graded_profile, "N", ["en"], "Manchester, United Kingdom", 30, 120, [],
+       graded, "mid", "bsc", "", ["patient care"], [], [], [])
+exempt = graded_profile["scoring"]["seniority_exempt_titles"]
+check("only graded titles are exempted", len(exempt), 2)
+
+graded_path = tmp / "graded.yaml"
+graded_path.write_text(yaml.safe_dump(graded_profile, sort_keys=False), encoding="utf-8")
+graded_scorer = Scorer(graded_path)
+
+
+def seniority_of(title):
+    job = Job(source="s", source_id="1", title=title, company="NHS",
+              url="u", location="Manchester, United Kingdom")
+    return graded_scorer.score(job).seniority
+
+
+check("asked-for Staff Nurse is not senior", seniority_of("Staff Nurse"), "unknown")
+check("suffixed Staff Nurse is not senior",
+      seniority_of("Staff Nurse - Emergency Department"), "unknown")
+check("asked-for Senior Care Assistant is not senior",
+      seniority_of("Senior Care Assistant"), "unknown")
+# Subtracting the exempt title rather than skipping keeps real grades readable.
+check("a genuine grade on top still counts",
+      seniority_of("Senior Staff Nurse"), "senior")
+check("an unrelated senior title still counts",
+      seniority_of("Nurse Manager"), "senior")
+
 
 if failures:
     print(f"FAILED {len(failures)} check(s):\n")

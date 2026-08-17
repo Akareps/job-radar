@@ -245,6 +245,14 @@ def _guess_families(hints) -> list[str]:
     return list(dict.fromkeys(picked))
 
 
+#: Words this tool reads as a seniority grade. When one appears inside a title
+#: the user explicitly searched for, it is the job's name instead.
+_GRADE_WORD = re.compile(
+    r"\b(senior|staff|lead|principal|head|chief|director|manager|expert|"
+    r"advanced|experienced)\b", re.I,
+)
+
+
 def _title_pattern(title: str) -> str:
     """Literal, case-insensitive-friendly title match with flexible whitespace."""
     escaped = re.escape(" ".join(title.split())).replace(r"\ ", r"\s+")
@@ -307,6 +315,15 @@ def _apply(
     profile["exclude_titles"] = [
         pattern for pattern in profile.get("exclude_titles", [])
         if not any(re.search(pattern, title, re.I) for title in target_titles)
+    ]
+
+    # A seniority word inside a title the user asked for is part of the job's
+    # name, not its grade. "Staff Nurse" is the standard UK nursing band and
+    # "Staff Accountant" the junior US accounting one; without this every
+    # result for those searches was classified senior and capped.
+    profile["scoring"]["seniority_exempt_titles"] = [
+        _title_pattern(title) for title in target_titles
+        if _GRADE_WORD.search(title)
     ]
 
     caps = profile["scoring"]["hard_caps"]

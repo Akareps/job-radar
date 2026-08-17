@@ -19,3 +19,8 @@ config/secrets.yaml
 
 data/
 !data/.gitkeep
+
+# Build artefacts from `pip install -e .`
+*.egg-info/
+build/
+dist/
