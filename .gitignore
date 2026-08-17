@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+
+# CVs and resumes can contain sensitive personal information.
+[Cc][Vv]*.pdf
+[Rr]esume*.pdf
+[Cc]urriculum-[Vv]itae*.pdf
+
+# Your configuration and data. Only the .example.yaml files are tracked.
+config/profile.yaml
+config/settings.yaml
+config/companies.yaml
+config/seed_companies.yaml
+config/secrets.yaml
+
+data/
+!data/.gitkeep

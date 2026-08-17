@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jobradar</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161a21; --panel2: #1c212a; --line: #272d38;
+    --fg: #e6e9ef; --dim: #8b95a7; --dimmer: #5f6878;
+    --accent: #5aa9ff; --good: #46c98b; --warn: #e5b45f; --bad: #e8695f;
+    --pill: #232a35;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9; --panel: #fff; --panel2: #f0f2f5; --line: #dfe3e9;
+      --fg: #12151a; --dim: #5d6675; --dimmer: #8b94a3;
+      --accent: #0b66c3; --good: #17915c; --warn: #9a6b00; --bad: #c0392b;
+      --pill: #e9edf3;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header {
+    position: sticky; top: 0; z-index: 20; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding: 10px 16px;
+  }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .3px; font-weight: 650; }
+  h1 span { color: var(--dim); font-weight: 400; }
+  .muted { color: var(--dim); font-size: 12px; }
+  button, select, input {
+    background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 9px; font: inherit; font-size: 13px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  input[type=search] { min-width: 190px; }
+
+  .tabs { display: flex; gap: 4px; }
+  .tab {
+    padding: 4px 11px; border-radius: 999px; background: var(--pill);
+    border: 1px solid transparent; cursor: pointer; font-size: 13px;
+  }
+  .tab.on { background: var(--accent); color: #fff; }
+  .tab .n { opacity: .65; margin-left: 5px; font-variant-numeric: tabular-nums; }
+
+  main { padding: 12px 16px 60px; max-width: 1500px; margin: 0 auto; }
+
+  .job {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 12px; margin-bottom: 7px; display: grid;
+    grid-template-columns: 58px 1fr auto; gap: 12px; align-items: start;
+  }
+  .job.applied { opacity: .55; }
+  .job.rejected { opacity: .32; }
+  .job.shortlist { border-color: var(--good); }
+
+  .score {
+    font-size: 19px; font-weight: 680; text-align: right;
+    font-variant-numeric: tabular-nums; padding-top: 1px;
+  }
+  .s-hi { color: var(--good); } .s-mid { color: var(--warn); } .s-lo { color: var(--dimmer); }
+
+  .title { font-weight: 600; font-size: 14.5px; }
+  .meta { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
+  .meta b { color: var(--fg); font-weight: 550; }
+  .sep { color: var(--dimmer); margin: 0 5px; }
+
+  .tags { margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    background: var(--pill); color: var(--dim); white-space: nowrap;
+  }
+  .tag.fresh   { background: rgba(70,201,139,.16); color: var(--good); }
+  .tag.target  { background: rgba(90,169,255,.16); color: var(--accent); }
+  .tag.german  { background: rgba(229,180,95,.16); color: var(--warn); }
+  .tag.danger  { background: rgba(232,105,95,.16); color: var(--bad); }
+  .tag.pay     { background: rgba(70,201,139,.16); color: var(--good); }
+
+  .acts { display: flex; gap: 4px; align-items: center; }
+  .acts button { padding: 3px 8px; font-size: 12px; }
+
+  details.why { margin-top: 7px; }
+  details.why summary {
+    cursor: pointer; color: var(--dim); font-size: 12px; list-style: none;
+  }
+  details.why summary::-webkit-details-marker { display: none; }
+  details.why summary::before { content: "▸ "; }
+  details.why[open] summary::before { content: "▾ "; }
+  .why-grid {
+    margin-top: 6px; padding: 8px 10px; background: var(--panel2);
+    border-radius: 6px; font-size: 12px;
+  }
+  .why-grid table { border-collapse: collapse; width: 100%; max-width: 620px; }
+  .why-grid td { padding: 1px 10px 1px 0; }
+  .why-grid td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+  .desc {
+    margin-top: 7px; color: var(--dim); font-size: 12.5px;
+    max-height: 150px; overflow-y: auto; white-space: pre-wrap;
+  }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
+  }
+  table.health { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+  table.health th { text-align: left; color: var(--dim); font-weight: 500; padding: 3px 12px 3px 0; }
+  table.health td { padding: 2px 12px 2px 0; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+  .dot.ok { background: var(--good); } .dot.err { background: var(--bad); }
+  .empty { text-align: center; color: var(--dim); padding: 50px 0; }
+  #toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+    padding: 8px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s;
+    pointer-events: none; z-index: 50; font-size: 13px;
+  }
+  #toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="row">
+    <h1>jobradar <span>· {{ home_label }}</span></h1>
+    <div class="grow"></div>
+    <span class="muted" id="scanInfo"></span>
+    <button id="syncBtn" title="Merge what the GitHub Actions runner found while this machine was off">Sync from cloud</button>
+    <button class="primary" id="scanBtn">Scan now</button>
+  </div>
+
+  <div class="row" style="margin-top:9px">
+    <span class="muted">Rank by</span>
+    <div class="tabs" id="modeTabs"></div>
+    <span class="muted" id="modeHint" style="font-style:italic"></span>
+  </div>
+
+  <div class="row" style="margin-top:9px">
+    <div class="tabs" id="statusTabs">
+      <div class="tab on" data-status="">All</div>
+      <div class="tab" data-status="new">New<span class="n" id="c-new"></span></div>
+      <div class="tab" data-status="shortlist">Shortlist<span class="n" id="c-shortlist"></span></div>
+      <div class="tab" data-status="applied">Applied<span class="n" id="c-applied"></span></div>
+      <div class="tab" data-status="rejected">Rejected<span class="n" id="c-rejected"></span></div>
+    </div>
+
+    <select id="role"><option value="">All roles</option></select>
+    <select id="tier"><option value="">Anywhere</option></select>
+    <select id="source"><option value="">All sources</option></select>
+    <select id="maxAge">
+      <option value="">Any age</option>
+      <option value="1">Last 24h</option>
+      <option value="3">Last 3 days</option>
+      <option value="7">Last week</option>
+      <option value="30">Last month</option>
+    </select>
+    <input type="search" id="q" placeholder="Search title, company, text">
+    <label class="muted" style="display:flex;gap:5px;align-items:center;cursor:pointer">
+      <input type="checkbox" id="showAll" style="width:auto"> show below score {{ '%.0f'|format(min_score) }}
+    </label>
+    <div class="grow"></div>
+    <span class="muted" id="resultCount"></span>
+  </div>
+</header>
+
+<main>
+  <details class="panel" id="healthPanel">
+    <summary class="muted" style="cursor:pointer">Source health &amp; scan history</summary>
+    <div class="row" style="align-items:flex-start;gap:34px;margin-top:10px">
+      <table class="health">
+        <thead><tr><th>source</th><th>last count</th><th>fails</th><th>last ok</th></tr></thead>
+        <tbody id="healthBody"></tbody>
+      </table>
+      <table class="health">
+        <thead><tr><th>scan</th><th>found</th><th>new</th><th>secs</th><th>errors</th></tr></thead>
+        <tbody id="scanBody"></tbody>
+      </table>
+    </div>
+  </details>
+
+  <div id="list"></div>
+  <div class="empty" id="empty" hidden>
+    No matches with these filters. Try “show below score”, widen the age filter, or run a scan.
+  </div>
+  <div style="text-align:center;margin-top:14px">
+    <button id="moreBtn" hidden>Load more</button>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const FAMILY = {{ family_labels|tojson }};
+const MIN_SCORE = {{ min_score }};
+const PAY_LABELS = {{ pay_labels|tojson }};
+const PAGE_SIZE = 100;
+const $ = s => document.querySelector(s);
+let jobs = [];
+let mode = "balanced";
+let offset = 0;
+
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 1800);
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function params() {
+  const p = new URLSearchParams();
+  const status = $("#statusTabs .tab.on").dataset.status;
+  if (status) p.set("status", status);
+  for (const [id, key] of [["role","role"],["tier","tier"],["source","source"],["maxAge","max_age"]]) {
+    if ($("#" + id).value) p.set(key, $("#" + id).value);
+  }
+  if ($("#q").value.trim()) p.set("q", $("#q").value.trim());
+  if ($("#showAll").checked) p.set("show_all", "1");
+  p.set("mode", mode);
+  p.set("limit", PAGE_SIZE);
+  p.set("offset", offset);
+  return p;
+}
+
+function scoreClass(s) { return s >= 120 ? "s-hi" : s >= MIN_SCORE ? "s-mid" : "s-lo"; }
+
+function tagHtml(job) {
+  const out = [];
+  if (job.is_fresh) out.push('<span class="tag fresh">new</span>');
+  const map = {
+    "target-company": ["target", "target company"],
+    "german-required": ["german", "German required"],
+    "german-posting": ["german", "German posting"],
+    "french-posting": ["german", "French posting"],
+    "phd-required": ["danger", "PhD required"],
+    "phd-position": ["", "PhD position"],
+    "clearance": ["danger", "clearance"],
+    "off-target": ["danger", "off target"],
+    "evergreen": ["", "always-open req"],
+  };
+  for (const t of job.tags || []) {
+    const m = map[t];
+    if (m) out.push(`<span class="tag ${m[0]}">${esc(m[1])}</span>`);
+  }
+  if (job.seniority && job.seniority !== "unknown")
+    out.push(`<span class="tag">${esc(job.seniority.replace("_", " "))}</span>`);
+  if (job.min_years_experience != null)
+    out.push(`<span class="tag">${job.min_years_experience}+ yrs</span>`);
+
+  const b = job.score_breakdown || {};
+  if (b.pay_band && b.pay_band <= 2)
+    out.push(`<span class="tag pay">~${esc(PAY_LABELS[b.pay_band] || "")}</span>`);
+  if (b.capped_by)
+    out.push(`<span class="tag danger">capped: ${esc(b.capped_by.join(", ").replace(/_/g, " "))}</span>`);
+  return out.join("");
+}
+
+function whyHtml(b) {
+  const rows = [
+    ["role weight (" + (FAMILY[b.role_family] || b.role_family) + ")", b.base, true],
+    ["seniority: " + b.seniority, b.seniority_pts],
+    ["experience required", b.years_pts],
+    ["location: " + b.location_tier, b.location_pts],
+    ["freshness" + (b.age_days != null ? ` (${b.age_days}d)` : ""), b.recency_pts],
+    ["language: " + b.language, b.language_pts],
+    ["company tier " + b.company_tier, b.company_pts],
+    ["skill overlap", b.skill_pts],
+    ["penalties", b.penalty_pts],
+  ];
+  let html = "<table>";
+  for (const [label, v, isBase] of rows) {
+    if (v === undefined || v === null || (v === 0 && !isBase)) continue;
+    const cls = isBase ? "" : v > 0 ? "pos" : "neg";
+    const sign = isBase ? "" : v > 0 ? "+" : "";
+    html += `<tr><td>${esc(label)}</td><td class="${cls}">${sign}${v}</td></tr>`;
+  }
+  if (b.pay_band)
+    html += `<tr><td class="muted">est. pay band (${esc(PAY_LABELS[b.pay_band] || "")})</td>`
+          + `<td class="muted">+${b.pay_pts} in “Best paid”</td></tr>`;
+  html += `<tr><td class="muted">role weight × multiplier</td>`
+        + `<td class="muted">${b.base} × ${b.multiplier}</td></tr>`;
+  if (b.capped_by)
+    html += `<tr><td class="neg">capped (${esc(b.capped_by.join(", ").replace(/_/g, " "))})</td>`
+          + `<td class="neg">${b.uncapped_score} → ${b.cap_ceiling}</td></tr>`;
+  html += "</table>";
+  if (b.skill_hits && b.skill_hits.length)
+    html += `<div class="muted" style="margin-top:6px">matched: ${esc(b.skill_hits.join(", "))}</div>`;
+  return html;
+}
+
+function jobHtml(job) {
+  const b = job.score_breakdown || {};
+  const where = [job.city, job.country].filter(Boolean).join(", ") || job.location || "—";
+  return `
+  <div class="job ${esc(job.status)}" data-id="${esc(job.id)}">
+    <div class="score ${scoreClass(job.score)}">${job.score.toFixed(0)}</div>
+    <div>
+      <div class="title"><a href="${esc(job.url)}" target="_blank" rel="noopener">${esc(job.title)}</a></div>
+      <div class="meta">
+        <b>${esc(job.company) || "—"}</b><span class="sep">·</span>${esc(where)}
+        <span class="sep">·</span>${esc(FAMILY[job.role_family] || job.role_family)}
+        <span class="sep">·</span>${esc(job.age_label)}
+        <span class="sep">·</span>${esc(job.source)}
+      </div>
+      <div class="tags">${tagHtml(job)}</div>
+      <details class="why">
+        <summary>why this rank</summary>
+        <div class="why-grid">${whyHtml(b)}
+          ${job.description ? `<div class="desc">${esc(job.description)}</div>` : ""}
+        </div>
+      </details>
+    </div>
+    <div class="acts">
+      <button data-act="shortlist" title="Shortlist (s)">★</button>
+      <button data-act="applied"   title="Mark applied (a)">✓</button>
+      <button data-act="rejected"  title="Reject (r)">✕</button>
+      <button data-act="hidden"    title="Hide forever (h)">⌫</button>
+    </div>
+  </div>`;
+}
+
+async function load(append = false) {
+  if (!append) offset = 0;
+  const res = await fetch("/api/jobs?" + params().toString());
+  const data = await res.json();
+
+  if (append) {
+    jobs = jobs.concat(data.jobs);
+    $("#list").insertAdjacentHTML("beforeend", data.jobs.map(jobHtml).join(""));
+  } else {
+    jobs = data.jobs;
+    $("#list").innerHTML = jobs.map(jobHtml).join("");
+  }
+
+  $("#empty").hidden = jobs.length > 0;
+  $("#resultCount").textContent = `${jobs.length} of ${data.total} shown`;
+  $("#moreBtn").hidden = !data.has_more;
+  $("#moreBtn").textContent = `Load more (${data.total - jobs.length} left)`;
+}
+
+async function setStatus(id, status) {
+  const res = await fetch(`/api/jobs/${id}/status`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) { toast("Could not update"); return; }
+  const card = document.querySelector(`.job[data-id="${id}"]`);
+  if (card) {
+    card.className = "job " + status;
+    if (status === "hidden") card.remove();
+  }
+  toast(status === "hidden" ? "Hidden" : "Marked " + status);
+  refreshStats();
+}
+
+async function refreshStats() {
+  const s = await (await fetch("/api/stats")).json();
+  for (const k of ["new", "shortlist", "applied", "rejected"]) {
+    const el = $("#c-" + k);
+    if (el) el.textContent = s.counts[k] ? ` ${s.counts[k]}` : "";
+  }
+
+  const role = $("#role");
+  if (role.options.length <= 1) {
+    for (const [k, n] of s.facets.role_family)
+      role.add(new Option(`${FAMILY[k] || k} (${n})`, k));
+  }
+  const src = $("#source");
+  if (src.options.length <= 1) {
+    for (const [k, n] of s.facets.source) src.add(new Option(`${k} (${n})`, k));
+  }
+  // Location tiers come from your profile, so they cannot be hardcoded here.
+  const tier = $("#tier");
+  if (tier.options.length <= 1) {
+    for (const [k, n] of s.facets.tier) tier.add(new Option(`${k} (${n})`, k));
+  }
+
+  $("#healthBody").innerHTML = s.health.map(h => `
+    <tr>
+      <td><span class="dot ${h.last_error ? "err" : "ok"}"></span>${esc(h.source)}</td>
+      <td>${h.last_count}</td><td>${h.fail_streak || ""}</td>
+      <td class="muted">${esc((h.last_ok || "—").slice(0, 16).replace("T", " "))}</td>
+    </tr>`).join("");
+  $("#scanBody").innerHTML = s.scans.map(r => {
+    let n = 0;
+    try { n = JSON.parse(r.errors || "[]").length; } catch (e) { n = 0; }
+    return `<tr><td class="muted">${esc((r.started_at || "").slice(5, 16).replace("T", " "))}</td>
+      <td>${r.n_fetched}</td><td>${r.n_new}</td>
+      <td>${(r.duration_s || 0).toFixed(0)}</td><td>${n || ""}</td></tr>`;
+  }).join("");
+
+  const last = s.scans[0];
+  $("#scanInfo").textContent = last
+    ? `last scan ${(last.started_at || "").slice(5, 16).replace("T", " ")} · ${last.n_new} new`
+    : "no scans yet";
+
+  // scan_running reflects the machine-wide lock, so a scan started by the
+  // hourly task disables the button here too.
+  $("#scanBtn").disabled = s.scan_running;
+  $("#scanBtn").textContent = s.scan_running
+    ? (s.scan_is_ours ? "Scanning…" : "Scan running (scheduled)…")
+    : "Scan now";
+  if (s.scan_running) setTimeout(refreshStats, 4000);
+  else if (window._wasScanning) { window._wasScanning = false; load(); toast("Scan finished"); }
+  if (s.scan_running) window._wasScanning = true;
+}
+
+// --- events -----------------------------------------------------------------
+$("#statusTabs").onclick = e => {
+  const tab = e.target.closest(".tab");
+  if (!tab) return;
+  document.querySelectorAll("#statusTabs .tab").forEach(t => t.classList.remove("on"));
+  tab.classList.add("on");
+  load();
+};
+
+for (const id of ["role", "tier", "source", "maxAge", "showAll"])
+  $("#" + id).onchange = () => load();
+
+let typing;
+$("#q").oninput = () => { clearTimeout(typing); typing = setTimeout(() => load(), 280); };
+
+$("#moreBtn").onclick = () => { offset += PAGE_SIZE; load(true); };
+
+$("#modeTabs").onclick = e => {
+  const tab = e.target.closest(".tab");
+  if (!tab) return;
+  document.querySelectorAll("#modeTabs .tab").forEach(t => t.classList.remove("on"));
+  tab.classList.add("on");
+  mode = tab.dataset.mode;
+  $("#modeHint").textContent = tab.dataset.hint || "";
+  load();
+};
+
+async function loadModes() {
+  const { modes } = await (await fetch("/api/modes")).json();
+  $("#modeTabs").innerHTML = modes.map((m, i) =>
+    `<div class="tab${i === 0 ? " on" : ""}" data-mode="${esc(m.key)}" `
+    + `data-hint="${esc(m.hint)}">${esc(m.label)}</div>`).join("");
+  $("#modeHint").textContent = modes[0]?.hint || "";
+}
+
+$("#list").onclick = e => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  setStatus(btn.closest(".job").dataset.id, btn.dataset.act);
+};
+
+$("#syncBtn").onclick = async () => {
+  const btn = $("#syncBtn");
+  btn.disabled = true;
+  btn.textContent = "Syncing…";
+  try {
+    const res = await fetch("/api/sync", { method: "POST" });
+    const data = await res.json();
+    toast(data.message || (data.ok ? "Synced" : "Sync failed"));
+    if (data.ok) { load(); refreshStats(); }
+  } catch (e) {
+    toast("Sync failed: " + e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Sync from cloud";
+  }
+};
+
+$("#scanBtn").onclick = async () => {
+  $("#scanBtn").disabled = true;
+  const res = await fetch("/api/scan", { method: "POST" });
+  toast(res.ok ? "Scan started" : "A scan is already running");
+  window._wasScanning = true;
+  setTimeout(refreshStats, 1200);
+};
+
+// Keyboard triage: hover a row, press s / a / r / h. o opens the posting.
+document.addEventListener("keydown", e => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+  const card = document.querySelector(".job:hover");
+  if (!card) return;
+  const map = { s: "shortlist", a: "applied", r: "rejected", h: "hidden" };
+  if (map[e.key]) { e.preventDefault(); setStatus(card.dataset.id, map[e.key]); }
+  if (e.key === "o") card.querySelector(".title a")?.click();
+});
+
+loadModes().then(load);
+refreshStats();
+setInterval(refreshStats, 60000);
+</script>
+</body>
+</html>

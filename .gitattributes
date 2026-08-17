@@ -1,0 +1,11 @@
+# The scan database travels between the Linux Actions runner and this Windows
+# machine via the radar-state branch. Marking it binary stops any chance of
+# line-ending translation corrupting the SQLite file on the way through.
+*.db binary
+*.db-wal binary
+*.db-shm binary
+
+# Keep shell scripts LF so they run on the Actions runner.
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

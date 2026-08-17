@@ -1,0 +1,83 @@
+name: private jobradar scan
+
+# OPT-IN TEMPLATE - do not put this in a public repository that contains real
+# job-search state. Copy it to .github/workflows/scan.yml in a PRIVATE fork.
+# Add PROFILE_YAML_B64, SETTINGS_YAML_B64, and COMPANIES_YAML_B64 as repository
+# secrets containing base64-encoded versions of your three local YAML files.
+
+on:
+  workflow_dispatch:
+  # Uncomment only after reviewing expected Actions usage:
+  # schedule:
+  #   - cron: "7 */3 * * *"
+
+concurrency:
+  group: jobradar-scan
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: python -m pip install -e .
+
+      - name: Restore previous database
+        run: |
+          mkdir -p data
+          if git ls-remote --exit-code --heads origin radar-state; then
+            git fetch origin radar-state
+            if git show origin/radar-state:data/jobs.db.gz > data/jobs.db.gz 2>/dev/null; then
+              gunzip -f data/jobs.db.gz
+            fi
+          fi
+
+      - name: Restore private configuration
+        env:
+          PROFILE_YAML_B64: ${{ secrets.PROFILE_YAML_B64 }}
+          SETTINGS_YAML_B64: ${{ secrets.SETTINGS_YAML_B64 }}
+          COMPANIES_YAML_B64: ${{ secrets.COMPANIES_YAML_B64 }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+        run: |
+          test -n "$PROFILE_YAML_B64" && test -n "$SETTINGS_YAML_B64" && test -n "$COMPANIES_YAML_B64"
+          printf '%s' "$PROFILE_YAML_B64" | base64 --decode > config/profile.yaml
+          printf '%s' "$SETTINGS_YAML_B64" | base64 --decode > config/settings.yaml
+          printf '%s' "$COMPANIES_YAML_B64" | base64 --decode > config/companies.yaml
+          {
+            echo "adzuna:"
+            echo "  app_id: \"${ADZUNA_APP_ID}\""
+            echo "  app_key: \"${ADZUNA_APP_KEY}\""
+            echo "jooble:"
+            echo "  api_key: \"${JOOBLE_API_KEY}\""
+          } > config/secrets.yaml
+
+      - name: Scan and compact
+        run: |
+          jobradar scan --force
+          jobradar compact
+
+      - name: Publish database state only
+        run: |
+          rm -f config/profile.yaml config/settings.yaml config/companies.yaml config/secrets.yaml
+          gzip -9 -c data/jobs.db > data/jobs.db.gz
+          test "$(stat -c%s data/jobs.db.gz)" -le 94371840
+          git config user.name "jobradar-bot"
+          git config user.email "jobradar-bot@users.noreply.github.com"
+          git checkout --orphan radar-state-tmp
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          printf '*.db binary\n*.gz binary\n' > data/.gitattributes
+          git add -f data/.gitattributes data/jobs.db.gz
+          git commit -m "scan $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push -f origin radar-state-tmp:radar-state

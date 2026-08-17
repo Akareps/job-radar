@@ -1,0 +1,19 @@
+# Example discovery list. `jobradar init` copies this file to
+# config/seed_companies.yaml; replace these entries with employers relevant to
+# your field and locations before running `jobradar discover`.
+#
+# A name and domain are enough. If you already know the applicant tracking
+# system, the second form avoids discovery:
+#   - {name: Example Labs, platform: greenhouse, token: examplelabs, tier: A}
+#
+# Tiers are personal ranking preferences: A gets the largest bonus, B a smaller
+# one, and C none. These examples are intentionally varied and are not an
+# endorsement or a recommended target list.
+
+companies:
+  - {name: Mozilla, domain: mozilla.org, tier: B}
+  - {name: Wikimedia Foundation, domain: wikimediafoundation.org, tier: B}
+  - {name: GitLab, domain: gitlab.com, tier: B}
+  - {name: Automattic, domain: automattic.com, tier: C}
+  - {name: Canonical, domain: canonical.com, tier: C}
+  - {name: Red Hat, domain: redhat.com, tier: C}

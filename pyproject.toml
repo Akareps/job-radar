@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobradar-local"
+version = "1.0.0"
+description = "Local company-direct job discovery and transparent profile matching"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+dependencies = [
+  "requests>=2.32",
+  "PyYAML>=6.0",
+  "Flask>=3.0",
+  "rapidfuzz>=3.9",
+  "beautifulsoup4>=4.12",
+  "python-dateutil>=2.9",
+]
+
+[project.optional-dependencies]
+cv = [
+  "pypdf>=5.0",
+  "anthropic>=0.120",
+]
+
+[project.scripts]
+jobradar = "jobradar.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["jobradar*"]
+
+[tool.setuptools.package-data]
+jobradar = ["templates/*.html"]

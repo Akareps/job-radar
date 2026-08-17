@@ -1,0 +1,98 @@
+# Which sources run, and what they search for.
+# `jobradar init` generates a version of this tailored to your answers.
+#
+# Company-direct ATS boards live in companies.yaml and are always scanned -
+# they are the highest-signal source and need no configuration here.
+
+database: data/jobs.db
+profile: config/profile.yaml
+companies: config/companies.yaml
+
+# Parallel source workers. Per-host rate limiting still applies inside these,
+# so raising it speeds up ATS boards without hammering any single site.
+workers: 8
+
+# Keyword sweep used by the aggregator boards.
+queries:
+  - software engineer
+  - product manager
+
+locations:
+  - Berlin, Germany
+
+boards:
+  # ------------------------------------------------------------------ #
+  # Worldwide
+  # ------------------------------------------------------------------ #
+
+  # Free, no key. Strong DACH coverage, decent elsewhere.
+  arbeitnow:
+    enabled: true
+    pages: 3
+
+  # amazon.jobs public search. Amazon runs iCIMS in-house, so no ATS
+  # adapter reaches it. Locations must be "City, Country" - the country
+  # is what actually filters.
+  amazon:
+    enabled: false
+    locations:
+      - Berlin, Germany
+
+  # LinkedIn's logged-out guest endpoint. Ships DISABLED.
+  #
+  # It is queried without cookies or a login, at a hard 4s per-host delay,
+  # through the same public endpoint their own front-end calls - so no
+  # account of yours is involved. It is nonetheless against LinkedIn's terms
+  # of service, and enabling it is your decision, not the project's default.
+  # Worst realistic case is your IP being rate-limited and this one source
+  # going quiet; the ATS layer is unaffected.
+  linkedin:
+    enabled: false
+    pages: 2
+    # 1 internship, 2 entry, 3 associate, 4 mid-senior, 5 director.
+    experience: "1,2,3"
+    posted_within: r604800    # last 7 days
+    locations:
+      - Berlin, Germany
+
+  # Official APIs. Both stay dormant until you add a key to config/secrets.yaml.
+  #   Adzuna - free, instant:  https://developer.adzuna.com/
+  #   Jooble - free on request: https://jooble.org/api/about
+  adzuna:
+    enabled: false
+    max_days_old: 14
+    # Configure ISO-2 country codes supported by Adzuna before enabling.
+    # Example: countries: [de]; where: {de: Berlin}
+    countries: []
+    where: {}
+
+  jooble:
+    enabled: true
+
+  # ------------------------------------------------------------------ #
+  # Regional. Enable the ones that match where you are looking.
+  # ------------------------------------------------------------------ #
+
+  # Switzerland: the largest Swiss board. A real public JSON API that also
+  # returns structured language requirements and experience levels, which
+  # makes its results unusually well-scored.
+  jobs.ch:
+    enabled: false
+    pages: 3
+    locations: [Zurich, Geneva]   # plain city names, not "City, Country"
+
+  # Switzerland: developer and data roles. RSS feed.
+  swissdevjobs:
+    enabled: false
+
+  # Swiss + European academic and research posts (ETH, EPFL, PSI, Max Planck,
+  # CERN). Worth enabling for research-scientist and computational-biology
+  # tracks wherever you are.
+  myscience:
+    enabled: false
+    pages: 3
+
+# Rows scoring below this are kept in the database but hidden behind
+# "show all" in the dashboard. Scores are role weight x adjustment
+# multiplier, so a strong match usually lands well above 100.
+display_min_score: 70

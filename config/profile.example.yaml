@@ -1,0 +1,218 @@
+# jobradar matching profile.
+#
+# Copy to config/profile.yaml and edit, or run `jobradar init` to generate one
+# by answering a few questions (optionally reading them off your CV).
+#
+# After any edit run `jobradar rescore` - it re-ranks the whole database in
+# seconds without re-scanning anything.
+
+candidate:
+  name: Your Name
+  # Languages you can actually work in. Postings that demand a language not on
+  # this list are penalised; postings written in one are penalised more mildly.
+  languages: [en]
+  degree_level: other        # bsc | msc | phd | other - informational
+
+# --------------------------------------------------------------------------- #
+# Where you want to work.
+#
+# `home` is geocoded against the GeoNames city dataset (run `jobradar
+# geo-update` once to fetch it, ~5 MB). Postings are then scored by real
+# great-circle distance, so you never have to enumerate suburbs.
+#
+# Without the dataset the tool still works: `name_hints` below is consulted
+# instead, so set those if you would rather not download anything.
+# --------------------------------------------------------------------------- #
+location:
+  home: "Berlin, Germany"
+
+  bands:
+    # Commutable. Everything within this radius gets the full bonus.
+    - {within_km: 40, tier: local, points: 32}
+    # Same country / same region. Visible but ranked well below.
+    - {within_km: 150, tier: regional, points: -6}
+
+  # Places you would relocate for, each with its own radius.
+  also_good:
+    - {place: "Amsterdam, Netherlands", tier: hub, points: 16, within_km: 40}
+
+  remote:    {tier: remote,    points: 2}
+  elsewhere: {tier: elsewhere, points: -60}
+  unknown:   {tier: unknown,   points: -12}
+
+  # Fallback when a place name will not geocode, or before you have run
+  # `jobradar geo-update`. Matched as whole words.
+  name_hints:
+    local: [berlin]
+    hub:   [amsterdam]
+
+# --------------------------------------------------------------------------- #
+# Role families, best first.
+#
+# ORDER MATTERS: the first family whose pattern matches the title wins, so
+# specific families must sit above general ones. `weight` is the base score
+# before every other adjustment.
+#
+# Anchor domain terms with \b. An unanchored "omics" matches *econ*omics.
+# --------------------------------------------------------------------------- #
+role_families:
+
+  # `jobradar init` replaces this example with literal patterns for every
+  # title you enter, so professions outside the starter templates work too.
+  target_roles:
+    weight: 100
+    label: Target Roles
+    patterns:
+      - 'software\s+engineer'
+      - 'product\s+manager'
+
+  quant_trading:
+    weight: 100
+    label: Quant Trading
+    patterns:
+      - '(quantitative|algorithmic|algo|systematic|prop(rietary)?)\s+trad'
+      - '\btrader\b'
+      - 'market\s+mak'
+
+  quant_dev:
+    weight: 88
+    label: Quant Dev
+    patterns:
+      - 'quant(itative)?\s+(developer|dev\b|devops|engineer|technolog)'
+      - 'low[\s-]latency'
+
+  quant_research:
+    weight: 100
+    label: Quant Research
+    patterns:
+      - 'quant(itative)?\s+(research|analyst|strateg|modell?)'
+      - 'statistical\s+arbitrage'
+      - '\bquant\b(?!\s*(developer|dev\b|devops|engineer|trader|trading))'
+
+  ml_engineer:
+    weight: 86
+    label: ML Engineer
+    patterns:
+      - 'machine\s+learning\s+(engineer|scientist|specialist)'
+      - '\bml\s+(engineer|scientist|ops)'
+      - '(ai|a\.i\.)\s+(engineer|scientist|developer)'
+      - 'research\s+engineer'
+      - 'applied\s+(scientist|ai|ml)'
+      - '(llm|nlp|computer\s+vision|generative\s+ai)\s+(engineer|scientist)'
+
+  data_scientist:
+    weight: 78
+    label: Data Scientist
+    patterns:
+      - 'data\s+scientist'
+      - 'data\s+science'
+      - '(decision|applied)\s+scientist'
+
+  data_engineer:
+    weight: 58
+    label: Data Engineer
+    patterns:
+      - 'data\s+engineer'
+      - 'analytics\s+engineer'
+      - '(ml|ai|data)\s+platform\s+engineer'
+
+  software_engineer:
+    weight: 38
+    label: Software Eng
+    patterns:
+      - 'software\s+(engineer|developer)'
+      - '(backend|back-end|full[\s-]?stack|platform)\s+(engineer|developer)'
+      - '(python|java|c\+\+|c#|go|rust)\s+(developer|engineer)'
+
+# --------------------------------------------------------------------------- #
+# Scoring
+#
+# Final score = role weight x (1 + sum(adjustments)/100), then hard caps.
+# Multiplying rather than adding keeps every bonus proportional to how relevant
+# the role was to begin with - with additive scoring a local calibration
+# technician outranked a remote machine-learning role.
+# --------------------------------------------------------------------------- #
+scoring:
+
+  seniority:
+    junior: 26              # junior / graduate / campus / new grad
+    unknown: 4              # no marker at all - often open to new grads
+    mid: -6
+    intern: -12
+    working_student: -40    # a term-time side job, not a career move
+    senior: -70
+
+  years_experience:         # smallest stated requirement -> adjustment
+    0: 14
+    1: 14
+    2: 8
+    3: -4
+    4: -14
+    5: -30
+    8: -55
+
+  recency:                  # days since posting. Applying early matters.
+    0: 14
+    2: 9
+    7: 3
+    14: 0
+    30: -6
+    9999: -26
+
+  language:
+    required_missing: -30   # demands a language you do not speak
+    posting_missing: -9     # written in one, without demanding it
+
+  penalties:
+    phd_required: -26
+    phd_position: -15       # the job *is* a PhD - a real option, ranked lower
+    clearance_required: -60
+
+  company_tier:
+    A: 26
+    B: 12
+    C: 0
+
+  pay_band_pts:             # only used by the dashboard's "Best paid" mode
+    1: 30
+    2: 18
+    3: 6
+    4: 0
+
+  # Absolute ceilings, applied after everything else and honoured by every
+  # ranking mode. Scaling alone was not enough: a senior role at a target
+  # company still outranked winnable junior ones. Set to 999 to disable.
+  hard_caps:
+    senior: 45
+    phd_required: 48
+    working_student: 35
+    phd_position: 75
+    clearance: 10
+    off_target: 5
+
+  skill_bonus_cap: 22
+
+# Replace these examples with skills from your own background.
+skills:
+  high:    [project management, stakeholder management]
+  medium:  [data analysis, presentation]
+  low:     [sql, git]
+
+# Optional title patterns you never want. The wizard removes any pattern that
+# conflicts with an explicitly selected target title.
+exclude_titles: []
+
+# --------------------------------------------------------------------------- #
+# Employers worth a bonus. Matched as WHOLE TOKENS against an accent-folded
+# company name, so "PIMCO" does not match "IMC" and "Zürcher" matches "Zurcher".
+# --------------------------------------------------------------------------- #
+company_tiers:
+  A: []
+  B: []
+
+# Rough total-comp bands for your market, used only by the "Best paid" ranking
+# mode. Estimates you should edit as you learn real numbers.
+pay_bands:
+  labels: {1: "top of market", 2: "strong", 3: "solid", 4: "unknown / lower"}
+  default: 4
+  companies: {}
