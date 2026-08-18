@@ -190,11 +190,11 @@ scoring:
     clearance: 10
     off_target: 5
 
-  # Titles whose own words must not be read as a seniority grade. `staff` means
-  # senior in tech but is the standard grade in UK nursing and the junior one in
-  # US accounting, so a nurse searching "Staff Nurse" had every result capped.
-  # `jobradar init` fills this from any target title containing a grade word.
+  # Ambiguous role phrases whose words must not be read as a grade. The wizard
+  # can add "Staff Nurse" or "Product Manager" here, but never strips explicit
+  # modifiers such as "Senior" or technology's senior "Staff Engineer" grade.
   seniority_exempt_titles: []
+  target_seniority: junior  # fallback for a matched neutral phrase with no other signal
 
   skill_bonus_cap: 22
 

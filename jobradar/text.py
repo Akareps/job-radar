@@ -147,7 +147,7 @@ def requires_language(text: str, code: str) -> bool:
 # --------------------------------------------------------------------------- #
 
 _SENIOR_TITLE = re.compile(
-    r"\b(senior|sr\.?|staff|principal|lead(er)?|leiter|leitung|head\s+of|"
+    r"\b(senior|sr\.?|staff|principal|lead(er)?|leiter|leitung|head(?:\s+of)?|"
     r"director|vp|vice\s+president|chief|c[te]o|manager|managing|"
     r"architect|expert|specialist\s+iii|iii|iv|distinguished|fellow|"
     # "Experienced Quantitative Strategist" at WorldQuant scored 146 as

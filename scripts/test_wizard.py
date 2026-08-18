@@ -13,7 +13,8 @@ sys.path.insert(0, str(ROOT))
 from jobradar.models import Job
 from jobradar.scoring import Scorer  # noqa: E402
 from jobradar.wizard import (  # noqa: E402
-    _apply, _default_seniority, _guess_families, _skill_pattern, _write_settings,
+    _apply, _default_seniority, _guess_families, _seniority_exempt_pattern,
+    _skill_pattern, _write_settings,
 )
 
 failures = []
@@ -78,39 +79,63 @@ scorer = Scorer(profile_path)
 for title in titles:
     check(f"scorer accepts arbitrary target {title}", scorer.classify_role(title), "target_roles")
 
-# --- a grade word inside a title the user asked for is not a grade -----------
-# "Staff Nurse" is the standard UK nursing band and "Staff Accountant" the
-# junior US accounting one, but `staff` reads as senior in tech. Without the
-# exemption every result for those searches was classified senior and capped.
-graded = ["Staff Nurse", "Senior Care Assistant", "Registered Nurse"]
+# --- ambiguous role words are neutral, explicit grades remain grades --------
+graded = [
+    "Staff Nurse", "Staff Accountant", "Product Manager", "Nurse Manager",
+    "Senior Care Assistant", "Senior Software Engineer", "Staff Software Engineer",
+    "Head Chef",
+]
 graded_profile = yaml.safe_load(
     (ROOT / "config" / "profile.example.yaml").read_text(encoding="utf-8"))
 _apply(graded_profile, "N", ["en"], "Manchester, United Kingdom", 30, 120, [],
        graded, "mid", "bsc", "", ["patient care"], [], [], [])
 exempt = graded_profile["scoring"]["seniority_exempt_titles"]
-check("only graded titles are exempted", len(exempt), 2)
+check("only ambiguous role phrases are exempted", len(exempt), 4)
+check("chosen target level is stored", graded_profile["scoring"]["target_seniority"], "mid")
+check("Staff Nurse is neutral", _seniority_exempt_pattern("Staff Nurse") is not None, True)
+check("Product Manager is neutral", _seniority_exempt_pattern("Product Manager") is not None, True)
+check("Senior prefix is excluded from neutral phrase",
+      "Senior" not in (_seniority_exempt_pattern("Senior Product Manager") or ""), True)
+check("tech Staff remains a grade",
+      _seniority_exempt_pattern("Staff Software Engineer"), None)
+check("explicit Senior remains a grade",
+      _seniority_exempt_pattern("Senior Software Engineer"), None)
+check("bare Manager remains a grade", _seniority_exempt_pattern("Manager"), None)
 
 graded_path = tmp / "graded.yaml"
 graded_path.write_text(yaml.safe_dump(graded_profile, sort_keys=False), encoding="utf-8")
 graded_scorer = Scorer(graded_path)
 
 
-def seniority_of(title):
+def seniority_of(title, description=""):
     job = Job(source="s", source_id="1", title=title, company="NHS",
-              url="u", location="Manchester, United Kingdom")
+              url="u", location="Manchester, United Kingdom", description=description)
     return graded_scorer.score(job).seniority
 
 
-check("asked-for Staff Nurse is not senior", seniority_of("Staff Nurse"), "unknown")
-check("suffixed Staff Nurse is not senior",
-      seniority_of("Staff Nurse - Emergency Department"), "unknown")
-check("asked-for Senior Care Assistant is not senior",
-      seniority_of("Senior Care Assistant"), "unknown")
-# Subtracting the exempt title rather than skipping keeps real grades readable.
-check("a genuine grade on top still counts",
+check("Staff Nurse uses chosen mid level", seniority_of("Staff Nurse"), "mid")
+check("suffixed Staff Nurse uses chosen mid level",
+      seniority_of("Staff Nurse - Emergency Department"), "mid")
+check("Staff Accountant uses chosen mid level", seniority_of("Staff Accountant"), "mid")
+check("Product Manager uses chosen mid level", seniority_of("Product Manager"), "mid")
+check("Nurse Manager uses chosen mid level", seniority_of("Nurse Manager"), "mid")
+check("Senior Staff Nurse keeps the explicit grade",
       seniority_of("Senior Staff Nurse"), "senior")
-check("an unrelated senior title still counts",
-      seniority_of("Nurse Manager"), "senior")
+check("Senior Product Manager keeps the explicit grade",
+      seniority_of("Senior Product Manager"), "senior")
+check("Senior Nurse Manager keeps the explicit grade",
+      seniority_of("Senior Nurse Manager"), "senior")
+check("asked-for Senior Care Assistant stays senior",
+      seniority_of("Senior Care Assistant"), "senior")
+check("asked-for Senior Software Engineer stays senior",
+      seniority_of("Senior Software Engineer"), "senior")
+check("technology Staff Software Engineer stays senior",
+      seniority_of("Staff Software Engineer"), "senior")
+check("Head Chef stays senior", seniority_of("Head Chef"), "senior")
+check("stated experience overrides the target fallback",
+      seniority_of("Staff Nurse", "At least 5 years of experience required."), "senior")
+check("junior body language overrides the target fallback",
+      seniority_of("Staff Nurse", "Graduate and early career applicants are welcome."), "junior")
 
 
 if failures:

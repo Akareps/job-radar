@@ -126,15 +126,17 @@ class Scorer:
                          for k, v in (self.cfg.get("pay_band_pts") or {}).items()}
         self._caps = {k: float(v) for k, v in (self.cfg.get("hard_caps") or {}).items()}
 
-        # Titles the user explicitly asked for, whose own words must not be
-        # read as a grade. "Staff Nurse" is the standard UK nursing grade and
-        # "Staff Accountant" the junior US accounting one, but `staff` is a
-        # senior marker in tech - so a nurse searching for exactly that title
-        # had every result capped as senior. `jobradar init` fills this in.
+        # Level-neutral role phrases selected by the user. The wizard excludes
+        # explicit modifiers, so "Senior Staff Nurse" retains "Senior" after
+        # the neutral "Staff Nurse" phrase is removed.
         self._seniority_exempt = [
             re.compile(pattern, re.I)
             for pattern in (self.cfg.get("seniority_exempt_titles") or [])
         ]
+        target_level = str(self.cfg.get("target_seniority") or "").lower()
+        self._target_seniority = (
+            target_level if target_level in {"junior", "mid", "senior"} else ""
+        )
 
     # ------------------------------------------------------------------ #
 
@@ -223,14 +225,17 @@ class Scorer:
         if years is None:
             years = parse_min_years(desc)
             job.min_years_experience = years
-        # Remove any exempt target title from the probe first. Subtracting
-        # rather than skipping keeps real grades readable: "Senior Staff
-        # Nurse" still reduces to "Senior" and classifies as senior, while a
-        # bare "Staff Nurse" falls through to the body and years.
+        # Remove only the ambiguous role phrase. Explicit modifiers left in the
+        # title, stated years, and junior language in the body still win. If no
+        # other signal exists, use the level the candidate selected in setup.
         probe = title
+        matched_exempt = False
         for exempt in self._seniority_exempt:
-            probe = exempt.sub(" ", probe)
+            probe, count = exempt.subn(" ", probe)
+            matched_exempt = matched_exempt or count > 0
         seniority = classify_seniority(probe, desc, years)
+        if matched_exempt and seniority == "unknown" and self._target_seniority:
+            seniority = self._target_seniority
         job.seniority = seniority
         sen_pts = float(self.cfg["seniority"].get(seniority, 0))
         parts["seniority"] = seniority

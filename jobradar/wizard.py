@@ -245,11 +245,17 @@ def _guess_families(hints) -> list[str]:
     return list(dict.fromkeys(picked))
 
 
-#: Words this tool reads as a seniority grade. When one appears inside a title
-#: the user explicitly searched for, it is the job's name instead.
-_GRADE_WORD = re.compile(
-    r"\b(senior|staff|lead|principal|head|chief|director|manager|expert|"
-    r"advanced|experienced)\b", re.I,
+#: Explicit grade prefixes must remain visible to seniority classification.
+#: Only the ambiguous role phrase that follows may be neutralised.
+_EXPLICIT_GRADE_PREFIX = re.compile(
+    r"^\s*(senior|sr\.?|lead|principal|head|chief|director|expert|advanced|"
+    r"experienced)\b[\s,:/\-]*", re.I,
+)
+
+#: `staff` is level-neutral in these professions but senior in technology.
+_NEUTRAL_STAFF_ROLE = re.compile(
+    r"\bstaff\s+(?:(?:registered|tax|financial|cost|general)\s+)?"
+    r"(nurse|accountant)\b", re.I,
 )
 
 
@@ -257,6 +263,28 @@ def _title_pattern(title: str) -> str:
     """Literal, case-insensitive-friendly title match with flexible whitespace."""
     escaped = re.escape(" ".join(title.split())).replace(r"\ ", r"\s+")
     return rf"(?<![a-z0-9]){escaped}(?![a-z0-9])"
+
+
+def _seniority_exempt_pattern(title: str) -> str | None:
+    """The level-neutral role phrase inside an explicitly requested title.
+
+    Examples: `Staff Nurse` and `Product Manager` are role names, while the
+    prefixes in `Senior Staff Nurse` and `Lead Product Manager` remain grades.
+    `Staff Software Engineer` is not neutralised because staff is a real senior
+    engineering grade.
+    """
+    role = " ".join(title.split())
+    while True:
+        reduced, count = _EXPLICIT_GRADE_PREFIX.subn("", role, count=1)
+        if not count:
+            break
+        role = reduced.strip()
+
+    words = role.split()
+    is_manager_role = len(words) > 1 and words[-1].lower() == "manager"
+    if _NEUTRAL_STAFF_ROLE.search(role) or is_manager_role:
+        return _title_pattern(role)
+    return None
 
 
 def _skill_pattern(skill: str) -> str:
@@ -317,14 +345,14 @@ def _apply(
         if not any(re.search(pattern, title, re.I) for title in target_titles)
     ]
 
-    # A seniority word inside a title the user asked for is part of the job's
-    # name, not its grade. "Staff Nurse" is the standard UK nursing band and
-    # "Staff Accountant" the junior US accounting one; without this every
-    # result for those searches was classified senior and capped.
+    # Store only ambiguous role phrases, never an explicit grade. Thus "Staff
+    # Nurse" can be neutral while "Senior Staff Nurse" still reads as senior,
+    # and technology's "Staff Software Engineer" remains a senior title.
+    exempt_patterns = [_seniority_exempt_pattern(title) for title in target_titles]
     profile["scoring"]["seniority_exempt_titles"] = [
-        _title_pattern(title) for title in target_titles
-        if _GRADE_WORD.search(title)
+        pattern for pattern in exempt_patterns if pattern
     ]
+    profile["scoring"]["target_seniority"] = seniority
 
     caps = profile["scoring"]["hard_caps"]
     if seniority == "mid":
