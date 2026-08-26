@@ -73,7 +73,7 @@ def create_app(settings: dict | None = None) -> Flask:
     settings = settings or cfg.load_settings()
     db_path = cfg.resolve(settings["database"])
     profile = settings.get("profile", "config/profile.yaml")
-    min_score = float(settings.get("display_min_score", 70))
+    min_score = float(settings.get("display_min_score", 45))
 
     app = Flask(__name__)
     app.config["SETTINGS"] = settings

@@ -63,6 +63,10 @@ class RateLimiter:
 _limiter = RateLimiter()
 
 
+#: Exhausted timeouts before a host is dropped for the rest of the run.
+TIMEOUT_STRIKES = 2
+
+
 class Http:
     def __init__(self, timeout: int = 25, retries: int = 2, user_agent: str = DEFAULT_UA):
         self.timeout = timeout
@@ -82,6 +86,10 @@ class Http:
         #: latency - discovery probes up to 7 URLs per company, so one dead
         #: domain otherwise costs ~20 pointless requests.
         self._dead_hosts: set[str] = set()
+        #: Timeouts seen per host this run. A host that accepts the connection
+        #: and then hangs is not "permanent" by the test above, so it used to
+        #: be retried on every probe.
+        self._timeouts: dict[str, int] = {}
 
     @staticmethod
     def _is_permanent(exc: Exception) -> bool:
@@ -134,9 +142,23 @@ class Http:
                     log.debug("%s -> %s, backing off %.1fs", host, resp.status_code, wait)
                     time.sleep(min(wait, 30))
                     continue
+                # The host answered, so it is alive: clear any timeout strikes
+                # it had accumulated.
+                self._timeouts.pop(host, None)
                 return resp
             if attempt < self.retries:
                 time.sleep(2 ** attempt * 1.5)
+
+        # Every attempt timed out. Such a host is not "permanent" by the test
+        # above, and discovery probes up to 7 URLs per domain, so one hanging
+        # domain cost ~280s of pure waiting. Only fully exhausted requests
+        # count, and only consecutively: one shared hostname can back dozens of
+        # configured boards, so transient timeouts must never disable it.
+        if isinstance(last_exc, requests.Timeout):
+            self._timeouts[host] = self._timeouts.get(host, 0) + 1
+            if self._timeouts[host] >= TIMEOUT_STRIKES:
+                log.debug("%s keeps timing out, skipping it for this run", host)
+                self._dead_hosts.add(host)
 
         failure = type(last_exc).__name__ if last_exc else "unknown error"
         log.warning("giving up on %s (%s)", host, failure)

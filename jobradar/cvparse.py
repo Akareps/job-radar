@@ -161,6 +161,30 @@ def available() -> tuple[bool, str]:
     return True, ""
 
 
+#: Proxy settings httpx honours. A socks:// value needs httpx's socksio
+#: extra; without it httpx raises a bare ImportError while building the
+#: transport, and the half-built client raises again from __del__ during
+#: garbage collection - two tracebacks for one missing package.
+_PROXY_ENV = ("ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy",
+              "HTTP_PROXY", "http_proxy")
+
+
+def _check_socks_support() -> None:
+    """Raise a readable error before a SOCKS proxy can produce a traceback."""
+    if not any(str(os.environ.get(key, "")).lower().startswith("socks")
+               for key in _PROXY_ENV):
+        return
+    try:
+        import socksio  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "A SOCKS proxy is set in the environment but the socksio package "
+            "is missing, so the API client cannot be built. Install it with "
+            "`pip install socksio`, or skip extraction and fill the profile "
+            "in by hand."
+        ) from exc
+
+
 def from_cv(path: str | Path, model: str = MODEL) -> CVHints:
     """Extract profile hints from a CV. Raises with a readable message on failure."""
     import anthropic
@@ -169,8 +193,11 @@ def from_cv(path: str | Path, model: str = MODEL) -> CVHints:
     # A CV is short; this bound only guards against someone passing a thesis.
     text = text[:60_000]
 
-    client = anthropic.Anthropic()
+    _check_socks_support()
     try:
+        # Constructed inside the guard: the SDK builds its transport here, so
+        # this is where a broken proxy stack surfaces.
+        client = anthropic.Anthropic()
         response = client.messages.create(
             model=model,
             max_tokens=16000,
@@ -195,7 +222,19 @@ def from_cv(path: str | Path, model: str = MODEL) -> CVHints:
     except anthropic.APIStatusError as exc:
         raise RuntimeError(f"Anthropic API error {exc.status_code}: {exc.message}") from exc
     except anthropic.APIConnectionError as exc:
-        raise RuntimeError(f"Could not reach the Anthropic API: {exc}") from exc
+        # Connection errors quote the URL they failed on, which for a proxied
+        # setup is the proxy - and a proxy URL can carry user:password.
+        raise RuntimeError(
+            f"Could not reach the Anthropic API ({type(exc).__name__})."
+        ) from exc
+    except Exception as exc:
+        # Proxy and transport stacks fail in ways the SDK does not wrap. Only
+        # the exception type is shown: the text can carry proxy credentials.
+        # The wizard's manual path is always available.
+        raise RuntimeError(
+            f"Could not call the Anthropic API ({type(exc).__name__}). "
+            "You can skip extraction and enter your profile manually."
+        ) from exc
 
     # Check before touching content: a refusal returns HTTP 200 with no text.
     if response.stop_reason == "refusal":

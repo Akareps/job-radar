@@ -93,6 +93,12 @@ boards:
     pages: 3
 
 # Rows scoring below this are kept in the database but hidden behind
-# "show all" in the dashboard. Scores are role weight x adjustment
-# multiplier, so a strong match usually lands well above 100.
-display_min_score: 70
+# "show all" in the dashboard.
+#
+# Scores are role weight x adjustment multiplier, so the useful threshold
+# depends on the weights above: a target-role hit lands well above 100, while a
+# role matched by a lower-weighted family tops out far below it. Starting at 70
+# left a fresh install looking empty whenever the generated target patterns did
+# not match the local wording, so this starts permissive - raise it once you
+# have seen what your own results score.
+display_min_score: 45
