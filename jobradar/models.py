@@ -14,10 +14,8 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 
 
-# Legal-form suffixes, industry filler and board-page cruft that make the same
-# employer look like two different companies across sources. Without the trading
-# terms, "IMC" from Greenhouse and "IMC Trading" from LinkedIn stayed as two rows,
-# as did "Squarepoint Capital" vs "Squarepoint" and "Five Rings LLC - Careers".
+# Legal-form suffixes, industry filler and board-page cruft that can make the
+# same employer look like different companies across sources.
 _COMPANY_NOISE = re.compile(
     r"\b(ag|sa|sarl|gmbh|ltd|limited|llc|lp|inc|incorporated|plc|bv|nv|"
     r"holding|holdings|group|schweiz|switzerland|suisse|svizzera|"
@@ -124,8 +122,8 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-#: Longest description we persist. Nothing bounded this before and it grew to
-#: 83.6 MB of a 116 MB database - the biggest single posting was 46,285 chars.
+#: Longest description we persist. Bounding this keeps the database compact even
+#: when a source returns unusually large posting bodies.
 #:
 #: Scoring is unaffected: it runs on the in-memory Job before storage, and
 #: every consumer of the stored text works well inside this bound - the

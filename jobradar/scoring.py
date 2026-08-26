@@ -32,8 +32,7 @@ _CLEARANCE = re.compile(
     re.I,
 )
 
-#: Doctoral positions. These are real jobs and an ETH PhD is a legitimate route,
-#: so they stay visible - just ranked under equivalent industry roles.
+#: Doctoral positions remain visible, but rank below comparable industry roles.
 _PHD_POSITION = re.compile(
     r"\b(ph\.?d\.?[\s-]*(candidate|student|position|fellow|researcher)|"
     r"doctoral\s+(candidate|student|position|researcher)|doktorand)",
@@ -161,11 +160,7 @@ class Scorer:
 
     @staticmethod
     def _tokenised(company: str) -> str:
-        """' zurcher kantonalbank ' - padded so needles match as whole tokens.
-
-        Padding stops raw substring matches: PIMCO was taking IMC's bonus and
-        'hubspotjobs' was taking UBS's.
-        """
+        """Fold and pad a company name so tier needles match whole tokens."""
         return f" {fold(company)} "
 
     def company_tier(self, company: str) -> str:
@@ -329,10 +324,8 @@ class Scorer:
         parts["penalty_pts"] = pen
 
         # --- total -------------------------------------------------------
-        # Adjustments scale the role weight rather than adding to it. Additive
-        # scoring let a Basel calibration technician (+32 location, +12 company,
-        # +14 recency) outrank an actual ML engineer role. Multiplying keeps
-        # every bonus proportional to how relevant the role is in the first place.
+        # Adjustments scale the role weight rather than adding to it, keeping
+        # bonuses proportional to the role's relevance in the first place.
         adjustments = (sen_pts + yr_pts + loc_pts + rec_pts
                        + lang_pts + comp_pts + skill_pts + pen)
         multiplier = max(0.05, 1.0 + adjustments / 100.0)

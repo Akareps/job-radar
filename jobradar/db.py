@@ -218,8 +218,7 @@ class Store:
               dry_run: bool = False) -> dict[str, int]:
         """Drop stale, untriaged, uninteresting rows. -> counts.
 
-        Nothing bounded growth before: the database reached 116 MB / 18,696
-        rows and crossed GitHub's 100 MB file limit, breaking the workflow push.
+        This keeps long-running databases below hosting and artifact size limits.
 
         Two rules, both of which skip anything you triaged:
 
@@ -285,8 +284,8 @@ class Store:
 
     #: Appended to a shortened description. Also the marker that stops a row
     #: being rewritten on every pass: a capped row is max_chars + len(MARKER)
-    #: long, which still exceeds max_chars, so a naive length test re-truncated
-    #: the same 3,237 rows on every sync and reported them as fresh work.
+    #: long, which still exceeds max_chars, so a naive length test would rewrite
+    #: already-truncated rows on every sync and report them as fresh work.
     TRUNCATION_MARKER = "\n[truncated]"
 
     def truncate_descriptions(self, max_chars: int) -> int:

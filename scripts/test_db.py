@@ -33,14 +33,14 @@ tmpdir = Path(tempfile.mkdtemp())
 
 # --- upsert preserves triage state -------------------------------------------
 with Store(tmpdir / "a.db") as s:
-    n_new, n_upd = s.upsert_jobs([job("ats:greenhouse", "1", "Quant Researcher", "Optiver")])
+    n_new, n_upd = s.upsert_jobs([job("ats:greenhouse", "1", "Quant Researcher", "Zeta Markets")])
     check("first insert", (n_new, n_upd), (1, 0))
 
-    jid = job("ats:greenhouse", "1", "Quant Researcher", "Optiver").id
+    jid = job("ats:greenhouse", "1", "Quant Researcher", "Zeta Markets").id
     s.set_status(jid, "applied")
 
     # Same posting reappears in the next scan with a refreshed score.
-    n_new, n_upd = s.upsert_jobs([job("ats:greenhouse", "1", "Quant Researcher", "Optiver", score=140.0)])
+    n_new, n_upd = s.upsert_jobs([job("ats:greenhouse", "1", "Quant Researcher", "Zeta Markets", score=140.0)])
     check("second scan updates", (n_new, n_upd), (0, 1))
     row = s.get(jid)
     check("status survives rescan", row["status"], "applied")
@@ -49,17 +49,17 @@ with Store(tmpdir / "a.db") as s:
 # --- cross-source dedup ------------------------------------------------------
 with Store(tmpdir / "b.db") as s:
     s.upsert_jobs([
-        job("linkedin", "L1", "Quantitative Researcher", "Optiver", score=120),
-        job("jobs.ch", "J1", "Quantitative Researcher (m/f/d)", "Optiver AG", score=118),
-        job("ats:greenhouse", "G1", "Quantitative Researcher", "Optiver", score=115),
+        job("linkedin", "L1", "Quantitative Researcher", "Zeta Markets", score=120),
+        job("jobs.ch", "J1", "Quantitative Researcher (m/f/d)", "Zeta Markets AG", score=118),
+        job("ats:greenhouse", "G1", "Quantitative Researcher", "Zeta Markets", score=115),
         job("linkedin", "L2", "Data Scientist", "Roche", score=90),
     ])
     s.mark_duplicates()
     primaries = s.query(limit=50)
-    check("dedup collapses the Optiver trio", len(primaries), 2)
+    check("dedup collapses the Zeta Markets trio", len(primaries), 2)
     # The ATS row wins even though it scores lowest - it has the real apply link.
-    optiver = [r for r in primaries if "Optiver" in r["company"]][0]
-    check("ATS row wins the tie", optiver["source"], "ats:greenhouse")
+    zeta = [r for r in primaries if "Zeta Markets" in r["company"]][0]
+    check("ATS row wins the tie", zeta["source"], "ats:greenhouse")
     check("duplicates still stored", s.counts()["duplicates"], 2)
 
 # --- merge between two databases ---------------------------------------------
@@ -100,30 +100,30 @@ with Store(tmpdir / "r2.db") as remote:
     remote.conn.commit()
 with Store(tmpdir / "l2.db") as local:
     local.merge_from(tmpdir / "r2.db")
-    row = local.get(job("linkedin", "S1", "Senior Quant Researcher", "IMC").id)
+    row = local.get(job("linkedin", "S1", "Senior Quant Researcher", "Alpha Quant").id)
     check("remote score is NOT imported", row["score"], 45.0)
     check("remote role_family is NOT imported", row["role_family"], "quant_research")
     check("remote seniority is NOT imported", row["seniority"], "senior")
 
 # Raw board facts, by contrast, must come through.
 with Store(tmpdir / "l3.db") as local:
-    local.upsert_jobs([job("linkedin", "T1", "Old Title", "IMC")])
+    local.upsert_jobs([job("linkedin", "T1", "Old Title", "Alpha Quant")])
 with Store(tmpdir / "r3.db") as remote:
-    remote.upsert_jobs([job("linkedin", "T1", "Corrected Title", "IMC Trading")])
+    remote.upsert_jobs([job("linkedin", "T1", "Corrected Title", "Alpha Quant Trading")])
 with Store(tmpdir / "l3.db") as local:
     local.merge_from(tmpdir / "r3.db")
-    row = local.get(job("linkedin", "T1", "Old Title", "IMC").id)
+    row = local.get(job("linkedin", "T1", "Old Title", "Alpha Quant").id)
     check("remote title IS imported", row["title"], "Corrected Title")
-    check("remote company IS imported", row["company"], "IMC Trading")
+    check("remote company IS imported", row["company"], "Alpha Quant Trading")
 
 # --- pruning: bounds growth without touching your decisions -----------------
 with Store(tmpdir / "prune.db") as s:
     s.upsert_jobs([
         job("linkedin", "P1", "Junk Role", "Nowhere Inc", score=5),    # old + junk
         job("linkedin", "P2", "Junk Role 2", "Nowhere Inc", score=5),  # recent + junk
-        job("linkedin", "P3", "Great Quant Role", "IMC", score=150),   # old + valuable
+        job("linkedin", "P3", "Great Quant Role", "Alpha Quant", score=150),  # old + valuable
         job("linkedin", "P4", "Applied Junk", "Nowhere Inc", score=5), # old + junk BUT applied
-        job("linkedin", "P5", "Ancient Good", "IMC", score=150),       # very old + valuable
+        job("linkedin", "P5", "Ancient Good", "Alpha Quant", score=150),    # very old + valuable
     ])
     s.set_status(job("linkedin", "P4", "Applied Junk", "Nowhere Inc").id, "applied")
     old = "datetime('now','-40 days')"
@@ -192,29 +192,29 @@ with Store(tmpdir / "scans.db") as s:
     check("fresh scan untouched", s.close_stale_scans(90), 0)
 
 # --- stable identity ---------------------------------------------------------
-a = job("linkedin", "X", "Quant", "IMC")
-b = job("linkedin", "X", "Quant Researcher", "IMC Trading")
+a = job("linkedin", "X", "Quant", "Alpha Quant")
+b = job("linkedin", "X", "Quant Researcher", "Alpha Quant Trading")
 check("id keyed on source only", a.id, b.id)
-c = job("jobs.ch", "X", "Quant", "IMC")
+c = job("jobs.ch", "X", "Quant", "Alpha Quant")
 check("different source, different id", a.id == c.id, False)
 check("dedupe key ignores legal suffix and m/f/d",
-      job("a", "1", "Data Scientist (m/f/d)", "Roche AG").dedupe_key,
-      job("b", "2", "Data Scientist", "Roche").dedupe_key)
+      job("a", "1", "Data Scientist (m/f/d)", "Gamma Labs AG").dedupe_key,
+      job("b", "2", "Data Scientist", "Gamma Labs").dedupe_key)
 # The same posting reaches us named differently by each source.
 for left, right in [
-    ("IMC", "IMC Trading"),
-    ("Squarepoint Capital", "Squarepoint"),
-    ("Five Rings LLC - Careers", "Five Rings"),
-    ("Jane Street Capital", "Jane Street"),
-    ("Optiver Holding B.V.", "Optiver"),
+    ("Alpha Quant", "Alpha Quant Trading"),
+    ("Beta Capital", "Beta"),
+    ("Gamma Labs LLC - Careers", "Gamma Labs"),
+    ("Delta Research Capital", "Delta Research"),
+    ("Epsilon Holding B.V.", "Epsilon"),
 ]:
     check(f"dedupe collapses {left!r} / {right!r}",
           job("a", "1", "Graduate Quant Researcher", left).dedupe_key,
           job("b", "2", "Graduate Quant Researcher", right).dedupe_key)
 # ...but must not collapse genuinely different employers.
 check("distinct employers stay distinct",
-      job("a", "1", "Quant Researcher", "Jump Trading").dedupe_key
-      != job("b", "2", "Quant Researcher", "Jane Street").dedupe_key, True)
+      job("a", "1", "Quant Researcher", "Orion Trading").dedupe_key
+      != job("b", "2", "Quant Researcher", "Vega Research").dedupe_key, True)
 
 if failures:
     print(f"FAILED {len(failures)} check(s):\n")

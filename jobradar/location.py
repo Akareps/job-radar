@@ -3,20 +3,20 @@
 Configured entirely from `profile.yaml`:
 
     location:
-      home: "Zurich, Switzerland"
+      home: "Berlin, Germany"
       bands:
         - {within_km: 40,  tier: local,    points: 32}
         - {within_km: 150, tier: regional, points: -6}
       also_good:
-        - {place: "London, United Kingdom", tier: hub, points: 16, within_km: 40}
+        - {place: "Amsterdam, Netherlands", tier: hub, points: 16, within_km: 40}
       remote:    {tier: remote,    points: 2}
       elsewhere: {tier: elsewhere, points: -60}
       unknown:   {tier: unknown,   points: -12}
       # Optional safety net used when the city dataset is unavailable or a
       # place name cannot be resolved.
       name_hints:
-        local: [zurich, zug, basel, schlieren]
-        hub:   [london, amsterdam]
+        local: [berlin]
+        hub:   [amsterdam]
 """
 
 from __future__ import annotations

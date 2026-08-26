@@ -146,21 +146,32 @@ def requires_language(text: str, code: str) -> bool:
 # Seniority
 # --------------------------------------------------------------------------- #
 
-_SENIOR_TITLE = re.compile(
+# Unambiguous grade markers.
+_SENIOR_STRONG = re.compile(
     r"\b(senior|sr\.?|staff|principal|lead(er)?|leiter|leitung|head(?:\s+of)?|"
-    r"director|vp|vice\s+president|chief|c[te]o|manager|managing|"
-    r"architect|expert|specialist\s+iii|iii|iv|distinguished|fellow|"
-    # "Experienced Quantitative Strategist" at WorldQuant scored 146 as
-    # seniority=unknown because none of the classic markers appear in it.
-    r"experienced|advanced|seasoned|erfahrene[rn]?|"
-    r"principal|team\s+lead|tech\s+lead|group\s+lead|"
+    r"director|vp|vice\s+president|chief|c[te]o|distinguished|fellow|"
+    r"team\s+lead|tech\s+lead|group\s+lead|"
     r"associate\s+director|executive\s+director|partner)\b",
     re.I,
 )
 
-#: Term-time side jobs. These carried the full junior bonus, which put a
-#: "Werkstudent:in (Gen)AI Engineer" at 144.5 - above real graduate roles.
-#: You want a position for after the MSc, so they get their own class.
+# Words that usually signal seniority but are also ordinary role nouns. An
+# explicit junior grade outranks these wherever it sits in the title, which
+# matters because a trailing parenthetical is a common way to state the grade:
+# "Manager (Graduate)", "Product Manager, New Grad".
+_SENIOR_WEAK = re.compile(
+    r"\b(manager|managing|architect|expert|specialist\s+iii|iii|iv|"
+    r"experienced|advanced|seasoned|erfahrene[rn]?)\b",
+    re.I,
+)
+
+#: Union, for callers that only ask "does this look senior at all".
+_SENIOR_TITLE = re.compile(
+    "(?:" + _SENIOR_STRONG.pattern + ")|(?:" + _SENIOR_WEAK.pattern + ")", re.I
+)
+
+#: Term-time positions are distinct from permanent entry-level roles, so they
+#: receive their own class instead of the full graduate/junior adjustment.
 _WORKING_STUDENT = re.compile(
     r"\b(werkstudent|working\s+student|studentische\s+hilfskraft|student\s+assistant|"
     r"studentenjob|teilzeit\s+student|student\s+worker)", re.I,
@@ -216,10 +227,21 @@ def classify_seniority(title: str, description: str = "", min_years: int | None 
         return "working_student"
     if _INTERN.search(title):
         return "intern"
+    # A title can contain both kinds of marker because a role noun or a later
+    # qualifier happens to look like a grade. Use the first marker: this keeps
+    # "Junior ... Manager" junior while "Senior Manager, Junior Talent" stays
+    # senior, and ignores a trailing phrase such as "payroll partner".
+    junior_match = _JUNIOR_TITLE.search(title)
+    strong_match = _SENIOR_STRONG.search(title)
+    if junior_match:
+        # An unambiguous grade outranks the junior marker only when it comes
+        # first, so "Senior Manager, Junior Talent Programs" stays senior while
+        # "Junior Test Data Engineer (payroll partner)" does not.
+        if strong_match and strong_match.start() < junior_match.start():
+            return "senior"
+        return "junior"
     if _SENIOR_TITLE.search(title):
         return "senior"
-    if _JUNIOR_TITLE.search(title):
-        return "junior"
 
     years = min_years if min_years is not None else parse_min_years(description)
     if years is not None:

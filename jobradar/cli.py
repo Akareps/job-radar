@@ -244,8 +244,8 @@ def sync_from_remote(settings: dict, remote: str = "origin",
 
     import gzip
 
-    # The runner publishes a gzipped database - a 116 MB file compresses to
-    # about 25 MB, which is what keeps it under GitHub's 100 MB file limit.
+    # The runner publishes a compressed database so larger state files remain
+    # below GitHub's per-file limit.
     # The plain name is still accepted so an older state branch keeps working.
     remote_candidates = ("data/jobs.db.gz", "data/jobs.db")
     # Refuse any interactive credential prompt rather than wait on one.
@@ -296,10 +296,8 @@ def sync_from_remote(settings: dict, remote: str = "origin",
 
         with Store(cfg.resolve(settings["database"])) as store:
             inserted, refreshed, touched = store.merge_from(tmp_path)
-            # Re-apply the storage cap. A remote written before the cap existed
-            # carries full-length descriptions, and importing them undid a local
-            # compaction - 2,995 rows went straight back over the limit and the
-            # file re-inflated from 103.9 MB to 114.3 MB.
+            # Re-apply the storage cap because a remote database written by an
+            # older release may still carry full-length descriptions.
             store.truncate_descriptions(MAX_DESCRIPTION_CHARS)
             # The remote scored these against whatever profile.yaml it had.
             # Scoring is a local derivation, so redo it here before the rows

@@ -81,6 +81,49 @@ check("french required", requires_language("Maitrise du francais exigee", "fr"),
 check("dutch required", requires_language("Fluent Dutch is required", "nl"), True)
 check("unrelated language not flagged", requires_language("fluent English", "de"), False)
 
+# --- grade markers: the first title-level marker wins when signals conflict ---
+# Regression: "Junior Quantitative Portfolio Manager" classified as senior
+# because "Manager" was tested before "Junior", capping the score at 45.
+check("junior beats manager",
+      classify_seniority("Junior Quantitative Portfolio Manager"), "junior")
+check("junior beats architect",
+      classify_seniority("Junior IT Security Architect"), "junior")
+check("graduate beats manager",
+      classify_seniority("Graduate Conference Manager"), "junior")
+check("trailing junior",
+      classify_seniority("Quantitative Financial Analyst Junior"), "junior")
+check("entry-level beats manager",
+      classify_seniority("Entry-Level Project Manager"), "junior")
+check("junior beats trailing partner context",
+      classify_seniority("Junior Test Data Engineer (external payroll partner)"), "junior")
+check("junior art director",
+      classify_seniority("Junior Art Director"), "junior")
+check("graduate head hunter",
+      classify_seniority("Graduate Head Hunter"), "junior")
+check("junior clinical fellow",
+      classify_seniority("Junior Clinical Fellow"), "junior")
+# When both markers occur, the first marker describes the advertised grade.
+# A trailing parenthetical or suffix is a common way to state the grade, so a
+# role noun earlier in the title must not outrank it.
+check("trailing graduate parenthetical",
+      classify_seniority("Sales & Business Development Manager (2026/27 Graduate)"), "junior")
+check("trailing junior parenthetical",
+      classify_seniority("Brand Activation & Event Manager:in (Junior)"), "junior")
+check("new grad suffix",
+      classify_seniority("Associate Product Manager, New Grad (2027 Start)"), "junior")
+check("mba graduate suffix",
+      classify_seniority("Venture Development Manager (MBA Graduate)"), "junior")
+check("senior outranks junior word",
+      classify_seniority("Senior Manager, Junior Talent Programs"), "senior")
+check("lead role outranks later campus word",
+      classify_seniority("Technical Community Lead, Campus Leaders"), "senior")
+check("staff is senior", classify_seniority("Staff Engineer"), "senior")
+check("principal is senior", classify_seniority("Principal Data Scientist"), "senior")
+check("head is senior", classify_seniority("Head Data Integration Platform"), "senior")
+check("bare manager is senior", classify_seniority("Engineering Manager"), "senior")
+check("experienced is senior",
+      classify_seniority("Experienced Quantitative Strategist"), "senior")
+
 if failures:
     print(f"FAILED {len(failures)} check(s):\n")
     for f in failures:

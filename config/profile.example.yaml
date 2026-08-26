@@ -78,14 +78,26 @@ role_families:
     weight: 88
     label: Quant Dev
     patterns:
-      - 'quant(itative)?\s+(developer|dev\b|devops|engineer|technolog)'
+      # "research" is denied here so a quant-research title keeps the research
+      # weight: this family is matched first and would otherwise claim it.
+      - 'quant(?:itative)?\s+(?:(?!market[\s-]+research|research|(?:ux|ui|user|survey|qualitative|clinical|medical|patient|campaign|brand|content|social|media|audience|talent|people|policy|education|psych|marketing|consumer|customer|project|hr)\b)[\w/&-]+\s+){0,2}(?:developer|dev\b|devops|engineer|technolog|software)'
       - 'low[\s-]latency'
 
   quant_research:
     weight: 100
     label: Quant Research
     patterns:
-      - 'quant(itative)?\s+(research|analyst|strateg|modell?)'
+      # "Quantitative" in a job title is a finance signal by default, so allow
+      # a domain word or two before the role noun ("Quantitative Equity
+      # Researcher", "Quantitative Macro Strategist"). An allow-list of domain
+      # words was tried first and silently dropped Equities, Macro, FX, Rates,
+      # Volatility and Multi-Asset, so the middle stays open and a lookahead
+      # rules out the non-finance senses: market, UX, survey, clinical.
+      # The role nouns are prefixes on purpose - that is what covers
+      # Researcher, Analysis, Strategies and Modelling in one pattern.
+      - 'quant(?:itative)?\s+(?:(?!market[\s-]+research|(?:ux|ui|user|survey|qualitative|clinical|medical|patient|campaign|brand|content|social|media|audience|talent|people|policy|education|psych|marketing|consumer|customer|project|hr)\b)[\w/&-]+\s+){0,2}(?:research|analys|strateg|modell?|scientist|specialist)'
+      # Buy-side quant seats, which carry a finance noun instead of "research".
+      - 'quant(?:itative)?\s+(?:portfolio|investment|asset|risk|derivatives?|pricing|credit|equit(?:y|ies)|fixed[\s-]+income)\b'
       - 'statistical\s+arbitrage'
       - '\bquant\b(?!\s*(developer|dev\b|devops|engineer|trader|trading))'
 

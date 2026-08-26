@@ -49,6 +49,22 @@ for title, want in [
     ("Quantitative Researcher", "quant_research"),
     ("Quant Researcher - ML Alpha", "quant_research"),
     ("Quantitative Analyst", "quant_research"),
+    ("Quantitative Equity Researcher", "quant_research"),
+    ("Quantitative Credit Strategist", "quant_research"),
+    ("Quantitative AI Strategist", "quant_research"),
+    ("Junior Quantitative Portfolio Manager", "quant_research"),
+    ("Quantitative Portfolio Analyst", "quant_research"),
+    ("Quantitative Risk Manager", "quant_research"),
+    # An allow-list of domain words dropped all of these; the middle is open.
+    ("Quantitative Equities Researcher", "quant_research"),
+    ("Quantitative Macro Strategist", "quant_research"),
+    ("Quantitative FX Analyst", "quant_research"),
+    ("Quantitative Volatility Researcher", "quant_research"),
+    ("Quantitative Multi-Asset Analyst", "quant_research"),
+    ("Quantitative Commodities Researcher", "quant_research"),
+    ("Quantitative Market Risk Analyst", "quant_research"),
+    ("Quantitative Prediction Markets Research Summer Analyst", "quant_research"),
+    ("Quantitative Risk Developer", "quant_dev"),
     ("Quantitative Trader", "quant_trading"),
     ("Graduate Trader", "quant_trading"),
     ("Machine Learning Engineer", "ml_engineer"),
@@ -61,6 +77,19 @@ for title, want in [
     ("Verantwortliche/-r Einsatz Führungssysteme Luftwaffe", "other"),
     ("Genetic Algorithm Optimisation Engineer", "other"),
     ("Ergonomics Specialist", "other"),
+    # "Quantitative" also describes non-finance research and operational work.
+    # These must not inherit the 100-point quant-research base.
+    ("Quantitative Marketing Research Manager", "other"),
+    ("Quantitative User Researcher", "other"),
+    ("Quantitative UX Researcher", "other"),
+    ("Quantitative Clinical Research Analyst", "other"),
+    ("Quantitative Survey Researcher", "other"),
+    ("Quantitative Customer Insights Analyst", "other"),
+    ("Quantitative Campaign Manager", "other"),
+    ("Quantitative Project Manager", "other"),
+    # "Market research" is the one non-finance sense built from finance words.
+    ("Quantitative Market Research Analyst", "other"),
+    ("Quantitative Marketing Specialist", "other"),
 ]:
     check(f"role: {title!r}", sc.classify_role(title), want)
 
@@ -84,30 +113,30 @@ check("unknown startup band 4", sc.pay_band("Tiny Startup GmbH"), 4)
 check("Acmeology does not inherit Acme band", sc.pay_band("Acmeology"), 4)
 
 # --- hard caps ---------------------------------------------------------------
-senior = score("Senior Quant Researcher - Fixed Income", "Squarepoint Capital")
+senior = score("Senior Quant Researcher - Fixed Income", "Example Quant Firm")
 check("senior capped", senior.score <= 45, True)
 check("senior recorded", senior.score_breakdown.get("capped_by"), ["senior"])
 
 phd = score("Quantitative Researcher – PhD & Postdoc Opportunities",
-            "Qube Research & Technologies",
+            "Example Research Firm",
             desc="A PhD degree is required for this position.")
 check("phd-required capped", phd.score <= 48, True)
 
-ws = score("Werkstudent:in (Gen)AI Engineer", "AXA Versicherungen AG")
+ws = score("Werkstudent:in (Gen)AI Engineer", "Example Employer")
 check("working student capped", ws.score <= 35, True)
 
-experienced = score("Experienced Quantitative Strategist", "WorldQuant")
+experienced = score("Experienced Quantitative Strategist", "Example Quant Firm")
 check("experienced is capped as senior", experienced.score <= 45, True)
 
 # A genuinely reachable role must outrank all of the above.
-junior = score("Graduate Quantitative Researcher", "IMC Trading", posted=None)
+junior = score("Graduate Quantitative Researcher", "Example Trading Firm", posted=None)
 check("junior beats senior", junior.score > senior.score, True)
 check("junior beats phd", junior.score > phd.score, True)
 check("junior beats working student", junior.score > ws.score, True)
 check("junior beats experienced", junior.score > experienced.score, True)
 
 # Uncapped roles must be untouched.
-plain = score("Quantitative Researcher", "IMC Trading")
+plain = score("Quantitative Researcher", "Example Trading Firm")
 check("uncapped role has no cap recorded", "capped_by" in plain.score_breakdown, False)
 
 if failures:
