@@ -231,6 +231,7 @@ python scripts/test_db.py
 python scripts/test_lock.py
 python scripts/test_wizard.py
 python scripts/test_http.py
+python scripts/test_cvparse.py
 ```
 
 The geographic tests use extra distance cases when the optional city cache is

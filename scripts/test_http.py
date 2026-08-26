@@ -53,19 +53,24 @@ if "api.example.test" not in logged:
 import jobradar.http as _http  # noqa: E402
 
 _http._limiter.wait = lambda host: None   # keep the test instant
+_http.time.sleep = lambda _seconds: None  # ...including retry backoff
 
 
 def _session(script):
-    """A fake session consuming one entry per ATTEMPT; runs out into timeouts."""
+    """A fake session consuming one entry per ATTEMPT; runs out into timeouts.
+
+    An entry is "timeout", "ok", or a status code such as 503.
+    """
     seq, calls = list(script), {"n": 0}
 
     class _S:
         def request(self, _method, url, **_kw):
             calls["n"] += 1
-            if (seq.pop(0) if seq else "timeout") == "timeout":
+            what = seq.pop(0) if seq else "timeout"
+            if what == "timeout":
                 raise requests.Timeout("hang")
             resp = requests.Response()
-            resp.status_code = 200
+            resp.status_code = 200 if what == "ok" else int(what)
             resp._content = b"ok"
             resp.url = url
             return resp
@@ -106,6 +111,19 @@ gone.request("GET", "https://gone.example.test/1")
 gone.request("GET", "https://gone.example.test/2")
 if "gone.example.test" not in gone._dead_hosts:
     failures.append("consecutive exhausted timeouts did not drop the host")
+
+# A retryable status proves the host is alive, so it must clear strikes even
+# when the request then fails: the retry path reaches `continue` and used to
+# skip the reset entirely. "timeout, timeout" followed by "503, timeout" must
+# not disable a host that dozens of configured boards share.
+mixed = Http(timeout=1, retries=1)
+mixed.session, _ = _session(["timeout", "timeout", "503", "timeout"])
+mixed.request("GET", "https://mixed.example.test/1")
+mixed.request("GET", "https://mixed.example.test/2")
+if "mixed.example.test" in mixed._dead_hosts:
+    failures.append("a 503 before a timeout disabled a host that had answered")
+if mixed._timeouts.get("mixed.example.test"):
+    failures.append("a retryable response did not clear timeout strikes")
 
 if failures:
     print("FAILED:\n  - " + "\n  - ".join(failures))

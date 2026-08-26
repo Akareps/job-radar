@@ -118,6 +118,7 @@ class Http:
 
         kw.setdefault("timeout", self.timeout)
         last_exc: Exception | None = None
+        answered = False
 
         for attempt in range(self.retries + 1):
             _limiter.wait(host)
@@ -136,25 +137,28 @@ class Http:
                     method, host, type(exc).__name__, attempt + 1,
                 )
             else:
+                # The host answered - even a 503 proves it is alive - so record
+                # that and clear its strikes here, before the retry path below
+                # can skip past this point with `continue`.
+                answered = True
+                self._timeouts.pop(host, None)
                 if resp.status_code in RETRY_STATUS and attempt < self.retries:
                     # Respect Retry-After when the server bothers to send one.
                     wait = float(resp.headers.get("Retry-After") or 0) or 2 ** attempt * 1.5
                     log.debug("%s -> %s, backing off %.1fs", host, resp.status_code, wait)
                     time.sleep(min(wait, 30))
                     continue
-                # The host answered, so it is alive: clear any timeout strikes
-                # it had accumulated.
-                self._timeouts.pop(host, None)
                 return resp
             if attempt < self.retries:
                 time.sleep(2 ** attempt * 1.5)
 
-        # Every attempt timed out. Such a host is not "permanent" by the test
+        # Every attempt timed out and none of them got a response. Such a host
+        # is not "permanent" by the test
         # above, and discovery probes up to 7 URLs per domain, so one hanging
         # domain cost ~280s of pure waiting. Only fully exhausted requests
         # count, and only consecutively: one shared hostname can back dozens of
         # configured boards, so transient timeouts must never disable it.
-        if isinstance(last_exc, requests.Timeout):
+        if isinstance(last_exc, requests.Timeout) and not answered:
             self._timeouts[host] = self._timeouts.get(host, 0) + 1
             if self._timeouts[host] >= TIMEOUT_STRIKES:
                 log.debug("%s keeps timing out, skipping it for this run", host)

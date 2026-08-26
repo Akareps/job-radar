@@ -88,8 +88,11 @@ def _connection_boom(*_a, **_k):
 _expect_clean("transport error", _transport_boom)
 _expect_clean("connection error", _connection_boom)
 
-# With a SOCKS proxy and no socksio, the client must never be constructed:
-# httpx raises while building the transport and again from __del__.
+# A SOCKS proxy with no socksio must be caught before the client is built:
+# httpx raises while building the transport and again from __del__. Both
+# branches are forced through sys.modules, because whether socksio happens to
+# be installed is precisely what this must not depend on - and installing it is
+# the remedy the error message recommends.
 built = {"n": 0}
 
 
@@ -98,13 +101,43 @@ def _counting(*_a, **_k):
     raise ImportError("should not be reached")
 
 
+def _force_socksio(available):
+    """Make `import socksio` succeed or fail. None in sys.modules raises."""
+    missing = object()
+    previous = sys.modules.get("socksio", missing)
+    sys.modules["socksio"] = types.ModuleType("socksio") if available else None
+
+    def restore():
+        if previous is missing:
+            sys.modules.pop("socksio", None)
+        else:
+            sys.modules["socksio"] = previous
+
+    return restore
+
+
 os.environ["ALL_PROXY"] = SECRET
+_restore = _force_socksio(False)
 try:
     _expect_clean("socks preflight", _counting)
 finally:
+    _restore()
     os.environ.pop("ALL_PROXY", None)
 if built["n"]:
     failures.append("client was constructed despite unusable SOCKS settings")
+
+# ...and with socksio importable the preflight must step aside, so the call is
+# attempted and any later failure still comes back scrubbed.
+built["n"] = 0
+os.environ["ALL_PROXY"] = SECRET
+_restore = _force_socksio(True)
+try:
+    _expect_clean("socks proxy with socksio present", _counting)
+finally:
+    _restore()
+    os.environ.pop("ALL_PROXY", None)
+if built["n"] != 1:
+    failures.append("preflight blocked the client even though socksio imported")
 
 if failures:
     print("FAILED:")
