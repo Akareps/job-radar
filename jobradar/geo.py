@@ -47,9 +47,11 @@ _COUNTRY_HINTS = {
     "india": "IN", "china": "CN", "hong kong": "HK", "israel": "IL",
     "united arab emirates": "AE", "uae": "AE", "luxembourg": "LU",
 }
+_COUNTRY_CODES = frozenset(_COUNTRY_HINTS.values())
 
 _REMOTE = re.compile(
-    r"\b(remote|anywhere|work\s+from\s+home|telearbeit|home\s?office|distributed)\b",
+    r"\b(remote|anywhere|worldwide|work\s+from\s+home|home[\s-]+based|"
+    r"telearbeit|home\s?office|distributed)\b",
     re.I,
 )
 
@@ -67,6 +69,21 @@ _US_STATES = frozenset(
     "mo mt ne nv nh nj nm ny nc nd oh ok or pa ri sc sd tn tx ut vt va wa wv "
     "wi wy dc".split()
 )
+
+
+def _us_state_codes(blob: str) -> set[str]:
+    """US-state-shaped tokens without mistaking words such as ``or``/``in``."""
+    tokens = {
+        match.group(0).lower()
+        for match in re.finditer(r"\b[A-Z]{2}\b", blob)
+    }
+    # Some feeds lowercase state codes, but a two-letter field immediately
+    # after a comma is still sufficiently explicit: ``Austin, tx``.
+    tokens.update(
+        match.group(1).lower()
+        for match in re.finditer(r",\s*([A-Za-z]{2})(?=\s*(?:[,;/|()]|$))", blob)
+    )
+    return tokens.intersection(_US_STATES)
 
 
 def fold(text: str) -> str:
@@ -234,7 +251,7 @@ class CityIndex:
             return None
 
         blob = f"{location} {country_hint}"
-        country = self._country_from(blob)
+        country = self.country_from(location, country_hint)
 
         fragments = [f.strip() for f in _SPLIT.split(blob) if f.strip()]
         # Longest first: "basel stadt" should beat "basel" when both resolve,
@@ -261,6 +278,66 @@ class CityIndex:
         return best
 
     @staticmethod
+    def country_from(location: str = "", country_hint: str = "") -> str | None:
+        """Infer an ISO country, trusting a structured country field first.
+
+        Free-form ``Wilmington, DE`` must keep meaning Delaware, while an ATS
+        that supplies ``country=DE`` means Germany.  The separate inputs give
+        us enough context to resolve that otherwise unavoidable ambiguity.
+        """
+        hint = (country_hint or "").strip()
+        if hint:
+            if re.fullmatch(r"[A-Za-z]{2}", hint):
+                code = hint.upper()
+                if code == "UK":
+                    return "GB"
+                # This is a source's structured country field, so trust any
+                # two-letter ISO-style value.  Free-form location text below
+                # remains deliberately conservative because CA/DE/IN can be
+                # US state abbreviations.
+                return code
+            country = CityIndex._country_from(hint)
+            if country:
+                return country
+        return CityIndex._country_from(location or "")
+
+    @staticmethod
+    def countries_from(location: str = "", country_hint: str = "") -> set[str]:
+        """Return every explicit country without guessing ambiguous state codes."""
+        hint = (country_hint or "").strip()
+        if hint:
+            if re.fullmatch(r"[A-Za-z]{2}", hint):
+                code = hint.upper()
+                return {"GB" if code == "UK" else code}
+            countries = CityIndex._countries_from_text(hint)
+            if countries:
+                return countries
+        return CityIndex._countries_from_text(location or "")
+
+    @staticmethod
+    def is_country_only(location: str = "", country_hint: str = "") -> bool:
+        """Whether ``location`` contains a country but no usable city.
+
+        Checking this before city lookup prevents tokens such as ``USA`` from
+        accidentally matching an unrelated city alias in the GeoNames data.
+        A two-letter value that is also a US state is country-only only when a
+        source supplied it separately as the structured country field.
+        """
+        raw = (location or "").strip()
+        hint = (country_hint or "").strip()
+        if not raw:
+            return bool(hint and CityIndex.country_from("", hint))
+        if hint and fold(raw) == fold(hint) and CityIndex.country_from("", hint):
+            return True
+
+        folded = fold(raw)
+        if any(folded == fold(name) for name in _COUNTRY_HINTS):
+            return True
+        if re.fullmatch(r"[A-Z]{2}", raw):
+            return raw in _COUNTRY_CODES and raw.lower() not in _US_STATES
+        return False
+
+    @staticmethod
     def _country_from(blob: str) -> str | None:
         folded = f" {fold(blob)} "
         for name, code in _COUNTRY_HINTS.items():
@@ -268,13 +345,52 @@ class CityIndex:
                 return code
         # A US state code pins the country, which matters for the many city
         # names the US shares with the rest of the world.
-        for state in _US_STATES:
-            if f" {state} " in folded:
-                return "US"
+        if _us_state_codes(blob):
+            return "US"
         match = re.search(r"\b([A-Z]{2})\b", blob)
-        if match and match.group(1) in set(_COUNTRY_HINTS.values()):
+        if match and match.group(1) in _COUNTRY_CODES:
             return match.group(1)
         return None
+
+    @staticmethod
+    def _countries_from_text(blob: str) -> set[str]:
+        """All explicit countries in free-form text; US states stay US states."""
+        countries: set[str] = set()
+        # Interpret colliding codes within each listed location.  This lets
+        # ``Germany (DE)`` mean Germany while ``Germany / Wilmington, DE``
+        # still records that the posting also has a US office.
+        whole = f" {fold(blob)} "
+        all_named_countries = {
+            code for name, code in _COUNTRY_HINTS.items()
+            if f" {fold(name)} " in whole
+        }
+        segments = re.split(
+            r"\s*(?:[;/|]|\bor\b|\band\b|\s+[–—-]\s+)\s*", blob, flags=re.I,
+        )
+        for segment in segments:
+            folded = f" {fold(segment)} "
+            named_countries = {
+                code for name, code in _COUNTRY_HINTS.items()
+                if f" {fold(name)} " in folded
+            }
+            countries.update(named_countries)
+            state_codes = _us_state_codes(segment)
+            standalone = re.fullmatch(r"\s*([A-Za-z]{2})\s*", segment)
+            # ``Germany (DE)`` repeats the named country; DE means Germany
+            # there, not Delaware.  The same is true across ``Germany - DE``;
+            # but ``Germany / Wilmington, DE`` still contains a US location.
+            if any(
+                state.upper() not in named_countries
+                and not (standalone and standalone.group(1).upper() == state.upper()
+                         and state.upper() in all_named_countries)
+                for state in state_codes
+            ):
+                countries.add("US")
+            for match in re.finditer(r"\b([A-Z]{2})\b", segment):
+                code = match.group(1)
+                if code in _COUNTRY_CODES and code.lower() not in _US_STATES:
+                    countries.add(code)
+        return countries
 
 
 @lru_cache(maxsize=4)

@@ -241,7 +241,14 @@ class Scorer:
         parts["years_pts"] = yr_pts
 
         # --- location ----------------------------------------------------
-        verdict = self.location.classify(job.location, job.country, job.remote)
+        country_hint = job.country
+        if (not country_hint and job.source == "arbeitnow"
+                and re.fullmatch(r"[A-Za-z]{2}", job.location.strip())):
+            # Older stored Arbeitnow rows predate the adapter's structured
+            # country field.  Preserve correct DE-as-Germany behavior when
+            # `jobradar rescore` revisits those rows.
+            country_hint = job.location
+        verdict = self.location.classify(job.location, country_hint, job.remote)
         job.city = verdict.city or job.city
         job.country = verdict.country or job.country
         loc_pts = verdict.points

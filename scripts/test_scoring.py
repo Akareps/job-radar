@@ -139,6 +139,32 @@ check("junior beats experienced", junior.score > experienced.score, True)
 plain = score("Quantitative Researcher", "Example Trading Firm")
 check("uncapped role has no cap recorded", "capped_by" in plain.score_breakdown, False)
 
+# Rescoring an Arbeitnow row stored before country normalization must still
+# interpret its bare DE location as Germany, not Delaware or unknown.
+us_profile = yaml.safe_load(yaml.safe_dump(profile))
+us_profile["location"]["home"] = "Durham, North Carolina, USA"
+us_profile["location"]["also_good"] = [
+    {"place": "New York, USA", "tier": "hub", "points": 16, "within_km": 40},
+    {"place": "San Francisco, USA", "tier": "hub", "points": 16, "within_km": 40},
+    {"place": "Seattle, USA", "tier": "hub", "points": 16, "within_km": 40},
+]
+us_profile["location"]["name_hints"] = {
+    "local": ["durham"],
+    "hub": ["new york", "san francisco", "seattle"],
+}
+us_profile_path = profile_path.with_name("us-profile.yaml")
+us_profile_path.write_text(yaml.safe_dump(us_profile, sort_keys=False), encoding="utf-8")
+us_scorer = Scorer(us_profile_path)
+legacy_de = Job(
+    source="arbeitnow", source_id="legacy-de",
+    title="Software Engineer - Stuttgart, Germany", company="Example",
+    url="u", location="DE",
+)
+us_scorer.score(legacy_de)
+check("legacy Arbeitnow DE is elsewhere",
+      legacy_de.score_breakdown["location_tier"], "elsewhere")
+check("legacy Arbeitnow DE retains Germany", legacy_de.country, "DE")
+
 if failures:
     print(f"FAILED {len(failures)} check(s):\n")
     for f in failures:

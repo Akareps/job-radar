@@ -15,6 +15,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 from jobradar.geo import CityIndex, fold, haversine_km, is_remote   # noqa: E402
 from jobradar.location import LocationClassifier                    # noqa: E402
+from jobradar.sources.boards import Arbeitnow                        # noqa: E402
 
 failures = []
 
@@ -37,6 +38,7 @@ check("fold accents", fold("Genève"), "geneve")
 near("Zurich->Basel", haversine_km(47.3769, 8.5417, 47.5596, 7.5886), 75, 5)
 near("London->Amsterdam", haversine_km(51.5074, -0.1278, 52.3676, 4.9041), 358, 10)
 check("remote detected", is_remote("Fully Remote (EU)"), True)
+check("home based detected", is_remote("Home based - Worldwide"), True)
 check("non-remote", is_remote("Zurich, Switzerland"), False)
 
 
@@ -66,11 +68,70 @@ check("offline: no geocoding", offline.geocoding_available, False)
 check("offline: local hint", offline.classify("Zurich, Switzerland").tier, "local")
 check("offline: hub hint", offline.classify("London, United Kingdom").tier, "hub")
 check("offline: remote", offline.classify("Remote").tier, "remote")
-check("offline: unknown stays unknown", offline.classify("Tokyo, Japan").tier, "unknown")
+check("offline: known foreign country is elsewhere",
+      offline.classify("Germany").tier, "elsewhere")
+check("offline: known foreign country is retained",
+      offline.classify("Germany").country, "DE")
+check("offline: structured DE means Germany",
+      offline.classify("DE", "DE").tier, "elsewhere")
+check("offline: same-country-only stays unknown",
+      offline.classify("Switzerland").tier, "unknown")
+check("offline: same-country-only retains country",
+      offline.classify("Switzerland").country, "CH")
+check("offline: unrecognised place stays unknown",
+      offline.classify("Atlantis").tier, "unknown")
+check("offline: unrecognised place has no country",
+      offline.classify("Atlantis").country, "")
+check("offline: remote wins over foreign country",
+      offline.classify("Remote - Germany").tier, "remote")
 # Whole-token matching: "England" must not match a hint of "gland".
 gland = make("Gland, Switzerland", hints={"local": ["gland"]})
 check("offline: England is not Gland",
       gland.classify("Oxford, England").tier != "local", True)
+
+# A configured hub makes its country potentially relevant even when a posting
+# supplies only the country and there is no city dataset to establish distance.
+offline_hub = make("Durham, North Carolina, USA", hubs=["Berlin, Germany"])
+check("offline: desired hub country stays unknown",
+      offline_hub.classify("Germany").tier, "unknown")
+us_offline = make("Durham, North Carolina, USA")
+for multi_country in ("Germany / United States", "United States / Germany"):
+    check(f"offline: desired country wins in {multi_country!r}",
+          us_offline.classify(multi_country).tier, "unknown")
+for foreign_country in (
+    "Germany, DE", "Germany (DE)", "Germany - DE", "DE - Germany",
+    "Canada, CA", "India, IN",
+):
+    check(f"offline: named country disambiguates {foreign_country!r}",
+          us_offline.classify(foreign_country).tier, "elsewhere")
+check("offline: separate Delaware office remains eligible",
+      us_offline.classify("Germany / Wilmington, DE").tier, "unknown")
+check("offline: conjunction is not Oregon",
+      us_offline.classify("Berlin or Munich, Germany").tier, "elsewhere")
+
+# Arbeitnow's API uses bare ISO country codes.  The adapter must mark that as a
+# structured country so DE is not confused with the US state of Delaware.
+class _ArbeitnowHttp:
+    def get_json(self, _url):
+        return {"data": [{
+            "slug": "country-only",
+            "title": "Software Engineer - Stuttgart, Germany",
+            "company_name": "Example",
+            "url": "https://example.test/job",
+            "location": "DE",
+            "description": "",
+            "created_at": "2026-01-01",
+            "job_types": [],
+            "remote": False,
+        }]}
+
+
+arbeitnow_job = next(Arbeitnow(pages=1).fetch(_ArbeitnowHttp()))
+check("arbeitnow: raw country remains the location", arbeitnow_job.location, "DE")
+check("arbeitnow: ISO location becomes structured country", arbeitnow_job.country, "DE")
+check("arbeitnow: DE ranks as foreign for a US profile",
+      us_offline.classify(arbeitnow_job.location, arbeitnow_job.country).tier,
+      "elsewhere")
 
 # --- online: everything below needs the dataset ------------------------------
 cache = ROOT / "data" / "cities.tsv.gz"
@@ -115,6 +176,28 @@ check("austin: same-state city is regional",
 verdict = austin.classify("New York, NY")
 check("austin: New York resolves to the US city", verdict.country, "US")
 near("austin: New York distance", verdict.distance_km, 2430, 60)
+check("austin: Delaware abbreviation remains a US state",
+      austin.classify("Wilmington, DE").country, "US")
+check("austin: California abbreviation remains a US state",
+      austin.classify("Los Angeles, CA").country, "US")
+check("austin: lowercase state after comma remains US",
+      austin.classify("Austin, tx").country, "US")
+check("austin: explicit DE country resolves Berlin in Germany",
+      austin.classify("Berlin", "DE").country, "DE")
+check("austin: explicit CA country resolves Toronto in Canada",
+      austin.classify("Toronto", "CA").country, "CA")
+for country_only in ("US", "USA", "United States"):
+    verdict = austin.classify(country_only)
+    check(f"austin: {country_only!r} stays country-only", verdict.tier, "unknown")
+    check(f"austin: {country_only!r} retains US", verdict.country, "US")
+
+# Some country names are also aliases of small localities in GeoNames.  They
+# must remain country-only rather than inheriting that unrelated city's range.
+sheffield = make("Sheffield, UK", index=index)
+wales = sheffield.classify("Wales")
+check("sheffield: Wales stays country-only", wales.tier, "unknown")
+check("sheffield: Wales has no fabricated city", wales.city, "")
+check("sheffield: Wales retains GB", wales.country, "GB")
 
 for home, place, tier in [
     ("Berlin, Germany", "Potsdam", "local"),

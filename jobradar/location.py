@@ -30,6 +30,7 @@ from .geo import CityIndex, Place, fold, is_remote
 log = logging.getLogger("jobradar.location")
 
 DEFAULT_UNKNOWN = ("unknown", -12.0)
+_CITY_STATE_COUNTRIES = frozenset({"HK", "LU", "SG"})
 
 
 @dataclass(frozen=True)
@@ -55,17 +56,25 @@ class LocationClassifier:
         self._unknown = self.config.get("unknown", {"tier": "unknown", "points": -12})
 
         self.home: Place | None = None
+        self._preferred_countries: set[str] = set()
         home_name = self.config.get("home")
         if home_name:
             self.home = self.index.resolve(home_name)
+            home_country = self.home.country if self.home else self.index.country_from(home_name)
+            if home_country:
+                self._preferred_countries.add(home_country)
             if self.home is None and self.index.available:
                 log.warning("could not locate home %r in the city dataset", home_name)
 
         # Extra places worth relocating for, each with its own radius.
         self.also_good: list[tuple[Place | None, dict]] = []
         for entry in self.config.get("also_good", []) or []:
-            place = self.index.resolve(entry.get("place", ""))
+            place_name = entry.get("place", "")
+            place = self.index.resolve(place_name)
             self.also_good.append((place, entry))
+            country = place.country if place else self.index.country_from(place_name)
+            if country:
+                self._preferred_countries.add(country)
 
         # Folded name -> (tier, points), consulted when geocoding cannot help.
         self._hints: dict[str, tuple[str, float]] = {}
@@ -105,7 +114,23 @@ class LocationClassifier:
         if not text:
             return self._unknown_verdict()
 
+        countries = self.index.countries_from(location, country_hint)
+        country = next(iter(countries)) if len(countries) == 1 else ""
+        country_only = self.index.is_country_only(location, country_hint)
         place = self.index.resolve(location, country_hint)
+        if (country_only and place is not None
+                and not (country in _CITY_STATE_COUNTRIES
+                         and fold(place.name) == fold(location))):
+            # Country tokens can occur in GeoNames alias lists: ``USA`` used
+            # to resolve to Concord and Wales to a tiny English locality.  Keep
+            # only genuine city-states whose city has the same name.
+            place = None
+        if (place is not None and len(countries) > 1
+                and countries.intersection(self._preferred_countries)
+                and place.country not in self._preferred_countries):
+            # Do not rank a multi-country posting by whichever foreign city
+            # happened to resolve first when another listed country is wanted.
+            place = None
 
         if place is not None and self.home is not None:
             distance = place.distance_to(self.home)
@@ -141,7 +166,17 @@ class LocationClassifier:
                            float(self._elsewhere.get("points", 0)),
                            place.name, place.country)
 
-        return self._unknown_verdict()
+        # A country alone cannot establish distance, but it can prove that a
+        # posting is outside every country the user selected.  Keep a desired
+        # country as unknown rather than pretending its entire territory is
+        # local or near a configured hub.
+        if (countries and self._preferred_countries
+                and countries.isdisjoint(self._preferred_countries)):
+            return Verdict(self._elsewhere.get("tier", "elsewhere"),
+                           float(self._elsewhere.get("points", 0)),
+                           country=country)
+
+        return self._unknown_verdict(country)
 
     def _match_hint(self, text: str) -> tuple[str, float] | None:
         folded = f" {fold(text)} "
@@ -153,9 +188,10 @@ class LocationClassifier:
                 best, best_len = verdict, len(name)
         return best
 
-    def _unknown_verdict(self) -> Verdict:
+    def _unknown_verdict(self, country: str = "") -> Verdict:
         return Verdict(self._unknown.get("tier", DEFAULT_UNKNOWN[0]),
-                       float(self._unknown.get("points", DEFAULT_UNKNOWN[1])))
+                       float(self._unknown.get("points", DEFAULT_UNKNOWN[1])),
+                       country=country)
 
     # ------------------------------------------------------------------ #
 

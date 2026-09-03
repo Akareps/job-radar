@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup
 
 from ..http import Http
 from ..models import Job
-from ..geo import fold
+from ..geo import CityIndex, fold
 from ..text import parse_date, strip_html
 from .base import Source
 
@@ -288,6 +288,14 @@ class Arbeitnow(Source):
             if not items:
                 return
             for j in items:
+                location = j.get("location", "") or ""
+                # Arbeitnow uses a bare ISO code for country-only locations.
+                # Preserve the raw location for display, but pass the code in
+                # the structured country field so DE cannot mean Delaware.
+                country = (
+                    self._country_code(location)
+                    if re.fullmatch(r"[A-Za-z]{2}", location.strip()) else ""
+                )
                 yield Job(
                     source=self.name,
                     source_id=str(j.get("slug")),
@@ -295,13 +303,18 @@ class Arbeitnow(Source):
                     company=j.get("company_name", "") or "",
                     url=j.get("url", ""),
                     apply_url=j.get("url", ""),
-                    location=j.get("location", "") or "",
+                    location=location,
+                    country=country,
                     description=strip_html(j.get("description", "")),
                     posted_at=parse_date(j.get("created_at")),
                     employment_type=", ".join(j.get("job_types") or []),
                     remote=bool(j.get("remote")),
                     raw={},
                 )
+
+    @staticmethod
+    def _country_code(location: str) -> str:
+        return CityIndex.country_from("", location) or ""
 
 
 # --------------------------------------------------------------------------- #
