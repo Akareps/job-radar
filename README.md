@@ -4,6 +4,8 @@ Jobradar polls company career systems and selected job boards, scores postings
 against your own criteria, and serves the results in a local dashboard. The
 matching rules are plain YAML, and every score component is visible.
 
+![The jobradar dashboard, ranking postings for an example profile](docs/jobradar-dashboard.png)
+
 ```text
 jobradar init          # create a private profile and search configuration
 jobradar geo-update    # download the city dataset once
