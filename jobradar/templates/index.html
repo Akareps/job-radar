@@ -263,7 +263,7 @@ function tagHtml(job) {
   if (b.pay_band && b.pay_band <= 2)
     out.push(`<span class="tag pay">~${esc(PAY_LABELS[b.pay_band] || "")}</span>`);
   if (b.capped_by)
-    out.push(`<span class="tag danger">capped: ${esc(b.capped_by.join(", ").replace(/_/g, " "))}</span>`);
+    out.push(`<span class="tag danger">limit: ${esc(b.capped_by.join(", ").replace(/_/g, " "))}</span>`);
   return out.join("");
 }
 
@@ -292,8 +292,8 @@ function whyHtml(b) {
   html += `<tr><td class="muted">role weight × multiplier</td>`
         + `<td class="muted">${b.base} × ${b.multiplier}</td></tr>`;
   if (b.capped_by)
-    html += `<tr><td class="neg">capped (${esc(b.capped_by.join(", ").replace(/_/g, " "))})</td>`
-          + `<td class="neg">${b.uncapped_score} → ${b.cap_ceiling}</td></tr>`;
+    html += `<tr><td class="neg">score limit (${esc(b.capped_by.join(", ").replace(/_/g, " "))})</td>`
+          + `<td class="neg">maximum ${b.cap_ceiling}</td></tr>`;
   html += "</table>";
   if (b.skill_hits && b.skill_hits.length)
     html += `<div class="muted" style="margin-top:6px">matched: ${esc(b.skill_hits.join(", "))}</div>`;

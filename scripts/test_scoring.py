@@ -165,6 +165,58 @@ check("legacy Arbeitnow DE is elsewhere",
       legacy_de.score_breakdown["location_tier"], "elsewhere")
 check("legacy Arbeitnow DE retains Germany", legacy_de.country, "DE")
 
+# A low role weight can keep the balanced score below a limit while another
+# ranking mode lifts it above that limit. Every applicable cap must survive.
+from copy import copy, deepcopy  # noqa: E402
+from jobradar.ranking import MODES, effective_score  # noqa: E402
+
+cap_scorer = copy(sc)
+cap_scorer.families = deepcopy(sc.families)
+for spec in cap_scorer.families.values():
+    spec["weight"] = 5
+
+for title, desc, reason in [
+    ("Senior Software Engineer", "", "senior"),
+    ("Software Engineer", "A PhD degree is required.", "phd_required"),
+    ("Werkstudent Software Engineer", "", "working_student"),
+    ("PhD Researcher in Machine Learning", "", "phd_position"),
+    ("Software Engineer", "Security clearance required.", "clearance"),
+]:
+    job = cap_scorer.score(Job(
+        source="ats:greenhouse", source_id=reason, title=title,
+        company='Acme', url="https://example.com/job",
+        location='Berlin, Germany', description=desc,
+    ))
+    ceiling = cap_scorer._caps[reason]
+    check(f"{reason}: fixture starts below cap", job.score < ceiling, True)
+    check(f"{reason}: limit retained", job.score_breakdown.get("cap_ceiling"), ceiling)
+    check(f"{reason}: explanation retained",
+          reason in job.score_breakdown.get("capped_by", []), True)
+    without_cap = {key: value for key, value in job.score_breakdown.items()
+                   if key != "cap_ceiling"}
+    check(f"{reason}: pay would cross cap",
+          effective_score(without_cap, MODES["pay"]) > ceiling, True)
+    for mode in MODES.values():
+        check(f"{reason}: cap holds in {mode.key}",
+              effective_score(job.score_breakdown, mode) <= ceiling, True)
+        check(f"{reason}: cap holds with overrides in {mode.key}",
+              effective_score(job.score_breakdown, mode,
+                              {"location": 100, "company": 100}) <= ceiling, True)
+
+# Equality is another boundary: the cap still applies after reweighting.
+equal_scorer = copy(sc)
+equal_scorer._caps = {"senior": 10000}
+equal_job = Job(source="ats:greenhouse", source_id="equal-cap",
+                title="Senior Software Engineer", company='Acme',
+                url="https://example.com/equal", location='Berlin, Germany')
+equal_scorer.score(equal_job)
+equal_scorer._caps = {"senior": equal_job.score_breakdown["uncapped_score"]}
+equal_scorer.score(equal_job)
+check("score equal to limit keeps ceiling", equal_job.score_breakdown.get("cap_ceiling"),
+      equal_scorer._caps["senior"])
+check("score equal to limit cannot rise in pay mode",
+      effective_score(equal_job.score_breakdown, MODES["pay"]) <= equal_job.score, True)
+
 if failures:
     print(f"FAILED {len(failures)} check(s):\n")
     for f in failures:

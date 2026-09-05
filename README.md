@@ -161,6 +161,11 @@ employer preference, and skill overlap. The dashboard can reweight stored score
 components for “Most winnable”, “Best paid”, “Closest to home”, and “Newest”
 views without rescanning. Pay bands are user-supplied estimates, not salary data.
 
+After upgrading to the ranking-cap fix, run `jobradar rescore` once. Older rows
+may lack a stored ceiling when their balanced score was already below it, which
+allowed another ranking mode to lift them above the cap. Rescoring updates the
+stored score components without fetching jobs or changing your triage marks.
+
 Role-family order matters: the first matching family wins. `jobradar init` puts
 the literal patterns for your chosen titles first and keeps the bundled patterns
 only as lower-priority fallbacks. After editing `profile.yaml`, run
@@ -205,6 +210,13 @@ secrets, inspect the workflow, and enable its schedule yourself. It stores only 
 compressed database on a `radar-state` branch; logs and configuration are not
 published there.
 
+To import a database file manually, run `jobradar merge path/to/other.db`.
+It follows the same merge process as cloud sync: preserve local triage and notes,
+cap stored descriptions, rescore new or changed postings with your local profile,
+and collapse duplicates. The source database is left unchanged. Use
+`jobradar -c path/to/settings.yaml merge path/to/other.db` to select a different
+local configuration.
+
 ## Commands
 
 | Command | Purpose |
@@ -220,6 +232,7 @@ published there.
 | `health` | Show source and scan status |
 | `compact` | Prune stale untriaged rows and shrink the database |
 | `sync` | Merge an opt-in cloud scanner's database |
+| `merge path/to/other.db` | Import another jobradar database and score its findings with your local profile |
 
 ## Tests
 
@@ -230,6 +243,8 @@ python scripts/test_geo.py
 python scripts/test_scoring.py
 python scripts/test_text.py
 python scripts/test_db.py
+python scripts/test_merge.py
+python scripts/test_pipeline.py
 python scripts/test_lock.py
 python scripts/test_wizard.py
 python scripts/test_http.py
@@ -237,7 +252,9 @@ python scripts/test_cvparse.py
 ```
 
 The geographic tests use extra distance cases when the optional city cache is
-present and otherwise run their offline checks. `scripts/smoke_test.py` contacts
-live job sources and is not part of CI.
+present and otherwise run their offline checks. Merge tests use temporary
+databases and simulated cloud responses; pipeline tests simulate source and
+storage failures; CV tests stub the optional API client.
+`scripts/smoke_test.py` contacts live job sources and is not part of CI.
 
 MIT licensed. GeoNames data is separately attributed under CC BY 4.0.

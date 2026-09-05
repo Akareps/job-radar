@@ -351,11 +351,12 @@ class Scorer:
         capped_by = self._apply_caps(job, seniority)
         if capped_by:
             ceiling = min(self._caps[name] for name in capped_by)
-            if total > ceiling:
-                parts["capped_by"] = sorted(capped_by)
-                parts["cap_ceiling"] = ceiling
-                parts["uncapped_score"] = round(total, 1)
-                total = ceiling
+            # Persist applicable limits even when the balanced score is lower:
+            # another ranking mode can raise it above this same ceiling.
+            parts["capped_by"] = sorted(capped_by)
+            parts["cap_ceiling"] = ceiling
+            parts["uncapped_score"] = round(total, 1)
+            total = min(total, ceiling)
 
         job.score = round(max(total, 0.0), 1)
         job.score_breakdown = parts

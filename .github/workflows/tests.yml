@@ -26,6 +26,9 @@ jobs:
           python scripts/test_scoring.py
           python scripts/test_text.py
           python scripts/test_db.py
+          python scripts/test_merge.py
+          python scripts/test_pipeline.py
           python scripts/test_lock.py
           python scripts/test_wizard.py
           python scripts/test_http.py
+          python scripts/test_cvparse.py

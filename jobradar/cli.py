@@ -231,6 +231,27 @@ def cmd_health(args) -> int:
     return 0
 
 
+def merge_database(settings: dict, source_path: str | Path) -> tuple[int, int, int]:
+    """Import board facts and rebuild their ranking against the local profile.
+
+    Both file imports and cloud sync use this path so foreign scores cannot
+    remain in the local rankings. Existing local triage and notes are preserved.
+    """
+    from .models import MAX_DESCRIPTION_CHARS
+    from .scoring import Scorer
+
+    # Fail on an unreadable or invalid profile before importing foreign scores.
+    profile_path = cfg.resolve(settings["profile"])
+    Scorer(profile_path)
+    with Store(cfg.resolve(settings["database"])) as store:
+        inserted, refreshed, touched = store.merge_from(source_path)
+        # Older databases may carry descriptions from before the storage cap.
+        store.truncate_descriptions(MAX_DESCRIPTION_CHARS)
+        rescored = rescore_db(store, profile_path, touched)
+        store.mark_duplicates()
+    return inserted, refreshed, rescored
+
+
 def sync_from_remote(settings: dict, remote: str = "origin",
                      branch: str = "radar-state", timeout: int = 120) -> tuple[bool, str]:
     """Merge the GitHub Actions runner's database into the local one.
@@ -291,21 +312,10 @@ def sync_from_remote(settings: dict, remote: str = "origin",
         tmp.write(payload)
         tmp_path = tmp.name
     try:
-        from .models import MAX_DESCRIPTION_CHARS
-        from .scoring import rescore_db
-
-        with Store(cfg.resolve(settings["database"])) as store:
-            inserted, refreshed, touched = store.merge_from(tmp_path)
-            # Re-apply the storage cap because a remote database written by an
-            # older release may still carry full-length descriptions.
-            store.truncate_descriptions(MAX_DESCRIPTION_CHARS)
-            # The remote scored these against whatever profile.yaml it had.
-            # Scoring is a local derivation, so redo it here before the rows
-            # are allowed to influence any ranking.
-            rescored = rescore_db(store, cfg.resolve(settings["profile"]), touched)
-            store.mark_duplicates()
+        inserted, refreshed, rescored = merge_database(settings, tmp_path)
     except Exception as exc:  # noqa: BLE001 - a bad remote DB must not kill a scan
-        return False, f"merge failed: {type(exc).__name__}: {exc}"
+        return False, (f"Merge failed ({type(exc).__name__}). "
+                       "Check the source database and local profile, then retry.")
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -323,9 +333,15 @@ def cmd_sync(args) -> int:
 
 def cmd_merge(args) -> int:
     settings = cfg.load_settings(args.config)
-    with Store(cfg.resolve(settings["database"])) as store:
-        inserted, refreshed = store.merge_from(args.path)
-    print(f"Merged {args.path}: {inserted} new, {refreshed} refreshed.")
+    try:
+        inserted, refreshed, rescored = merge_database(settings, args.path)
+    except Exception as exc:  # noqa: BLE001 - report a failed import like cloud sync
+        print(f"Merge failed ({type(exc).__name__}). "
+              "Check the source database and local profile, then retry.",
+              file=sys.stderr)
+        return 1
+    print(f"Merged {args.path}: {inserted} new, {refreshed} refreshed, "
+          f"{rescored} rescored locally. Your triage marks were preserved.")
     return 0
 
 

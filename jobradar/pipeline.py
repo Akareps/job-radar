@@ -79,23 +79,25 @@ def _run_scan_locked(settings: dict, only: list[str] | None) -> dict:
     log.info("scanning %d sources", len(sources))
 
     store = Store(cfg.resolve(settings["database"]))
-    scorer = Scorer(cfg.resolve(settings["profile"]))
-    http = Http()
-    # Tidy up rows left behind by scans that were killed mid-flight, so the
-    # history in `jobradar health` never shows a run stuck in progress.
-    store.close_stale_scans()
-    scan_id = store.start_scan()
-    started = time.monotonic()
-
-    all_jobs: list[Job] = []
-    errors: list[str] = []
-    # Health is aggregated per source *name*, so 200 Greenhouse boards roll up
-    # into one "ats:greenhouse" row instead of flooding the panel.
-    per_source: dict[str, int] = {}
-    per_source_err: dict[str, str] = {}
-
-    workers = int(settings.get("workers", 8))
+    scan_id: int | None = None
+    http: Http | None = None
+    failure: BaseException | None = None
     try:
+        scorer = Scorer(cfg.resolve(settings["profile"]))
+        http = Http()
+        # Tidy up rows left behind by scans that were killed mid-flight, so the
+        # history in `jobradar health` never shows a run stuck in progress.
+        store.close_stale_scans()
+        scan_id = store.start_scan()
+        started = time.monotonic()
+
+        all_jobs: list[Job] = []
+        errors: list[str] = []
+        # Health is aggregated per source name; company boards share an ATS row.
+        per_source: dict[str, int] = {}
+        per_source_err: dict[str, str] = {}
+
+        workers = int(settings.get("workers", 8))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(s.safe_fetch, http): s for s in sources}
             for future in as_completed(futures):
@@ -110,48 +112,67 @@ def _run_scan_locked(settings: dict, only: list[str] | None) -> dict:
                     log.debug("%s (%s): %d jobs", source.name, label, len(jobs))
                 per_source[source.name] = per_source.get(source.name, 0) + len(jobs)
                 all_jobs.extend(jobs)
+        all_jobs = _dedupe_within_batch(all_jobs)
+        for job in all_jobs:
+            scorer.score(job)
+
+        n_new, n_updated = store.upsert_jobs(all_jobs)
+        n_dupes = store.mark_duplicates()
+
+        for name, count in per_source.items():
+            store.record_source(name, count, per_source_err.get(name))
+
+        duration = time.monotonic() - started
+        store.finish_scan(scan_id, fetched=len(all_jobs), new=n_new,
+                          updated=n_updated, duration=duration, errors=errors[:50])
+
+        top = store.query(min_score=float(settings.get("display_min_score", 45)),
+                          status="new", limit=25)
+        summary = {
+            "skipped": False,
+            "sources": len(sources),
+            "fetched": len(all_jobs),
+            "new": n_new,
+            "updated": n_updated,
+            "duplicates_collapsed": n_dupes,
+            "errors": errors,
+            "duration_s": round(duration, 1),
+            "per_source": dict(sorted(per_source.items(), key=lambda kv: -kv[1])),
+            "top_new": [
+                {"title": r["title"], "company": r["company"], "score": r["score"],
+                 "city": r["city"], "url": r["url"], "source": r["source"]}
+                for r in top
+            ],
+        }
+        log.info(
+            "scan done: %d fetched, %d new, %d updated, %d dupes, %.1fs",
+            len(all_jobs), n_new, n_updated, n_dupes, duration,
+        )
+        return summary
     except BaseException as exc:  # noqa: BLE001 - includes KeyboardInterrupt
-        # Record the failure rather than leaving an open-ended scan row behind.
-        store.fail_scan(scan_id, f"{type(exc).__name__}: {exc}")
-        store.close()
+        failure = exc
+        # Do not commit a partly completed write when recording its failure.
+        try:
+            store.conn.rollback()
+        except Exception:
+            log.exception("could not roll back failed scan")
+        if scan_id is not None:
+            try:
+                store.fail_scan(scan_id, f"{type(exc).__name__}: {exc}")
+            except Exception:
+                log.exception("could not record scan failure")
         raise
-
-    all_jobs = _dedupe_within_batch(all_jobs)
-    for job in all_jobs:
-        scorer.score(job)
-
-    n_new, n_updated = store.upsert_jobs(all_jobs)
-    n_dupes = store.mark_duplicates()
-
-    for name, count in per_source.items():
-        store.record_source(name, count, per_source_err.get(name))
-
-    duration = time.monotonic() - started
-    store.finish_scan(scan_id, fetched=len(all_jobs), new=n_new,
-                      updated=n_updated, duration=duration, errors=errors[:50])
-
-    top = store.query(min_score=float(settings.get("display_min_score", 45)),
-                      status="new", limit=25)
-    store.close()
-
-    summary = {
-        "skipped": False,
-        "sources": len(sources),
-        "fetched": len(all_jobs),
-        "new": n_new,
-        "updated": n_updated,
-        "duplicates_collapsed": n_dupes,
-        "errors": errors,
-        "duration_s": round(duration, 1),
-        "per_source": dict(sorted(per_source.items(), key=lambda kv: -kv[1])),
-        "top_new": [
-            {"title": r["title"], "company": r["company"], "score": r["score"],
-             "city": r["city"], "url": r["url"], "source": r["source"]}
-            for r in top
-        ],
-    }
-    log.info(
-        "scan done: %d fetched, %d new, %d updated, %d dupes, %.1fs",
-        len(all_jobs), n_new, n_updated, n_dupes, duration,
-    )
-    return summary
+    finally:
+        # Close both resources even if setup, scoring, persistence or cleanup
+        # fails. A secondary cleanup error must not hide the original failure.
+        cleanup_error = None
+        for resource in (http.session if http is not None else None, store):
+            if resource is None:
+                continue
+            try:
+                resource.close()
+            except Exception as exc:
+                cleanup_error = cleanup_error or exc
+                log.exception("could not close scan resource")
+        if cleanup_error is not None and failure is None:
+            raise cleanup_error
