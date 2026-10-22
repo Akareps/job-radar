@@ -114,6 +114,12 @@ def create_app(settings: dict | None = None) -> Flask:
         deep = mode != ranking.DEFAULT_MODE
         fetch_limit = DEEP_RANK_CAP if deep else page_size
         fetch_offset = 0 if deep else offset
+        # In the default mode the stored score IS the displayed score, so the
+        # threshold can be applied in SQL, which is cheap. In any other mode
+        # the number on screen is recomputed per row, and filtering in SQL
+        # would drop rows the mode ranks far above the threshold: a software
+        # role stored at 63 but shown at 164 under "Best paid" disappeared.
+        sql_min_score = None if (show_all or deep) else min_score
 
         with store() as s:
             rows = s.query(
@@ -121,7 +127,7 @@ def create_app(settings: dict | None = None) -> Flask:
                 role_family=args.get("role") or None,
                 tier=args.get("tier") or None,
                 source=args.get("source") or None,
-                min_score=None if show_all else min_score,
+                min_score=sql_min_score,
                 max_age_days=int(args["max_age"]) if args.get("max_age") else None,
                 search=args.get("q") or None,
                 include_duplicates=args.get("dupes") == "1",
@@ -134,7 +140,7 @@ def create_app(settings: dict | None = None) -> Flask:
                 role_family=args.get("role") or None,
                 tier=args.get("tier") or None,
                 source=args.get("source") or None,
-                min_score=None if show_all else min_score,
+                min_score=sql_min_score,
                 max_age_days=int(args["max_age"]) if args.get("max_age") else None,
                 search=args.get("q") or None,
                 include_duplicates=args.get("dupes") == "1",
@@ -143,6 +149,15 @@ def create_app(settings: dict | None = None) -> Flask:
 
         jobs = [_row_to_dict(r) for r in rows]
         ranking.rank(jobs, mode)
+        # Whether the working set hit the cap is a property of the fetch, not
+        # of the count left after filtering below.
+        truncated = deep and len(rows) >= DEEP_RANK_CAP
+        if deep and not show_all:
+            # Apply the threshold against the score the user is actually
+            # looking at, now that the mode has computed it.
+            jobs = [job for job in jobs
+                    if (job.get("ranked_score") or job.get("score") or 0.0) >= min_score]
+            total = len(jobs)
         # A non-default mode reorders the working set, so anything past
         # DEEP_RANK_CAP is not reachable in that mode. Report the reachable
         # count rather than the raw total, otherwise the UI promises pages
@@ -158,7 +173,7 @@ def create_app(settings: dict | None = None) -> Flask:
             "jobs": jobs,
             "total": reachable,
             "total_matching": total,
-            "truncated": deep and total > DEEP_RANK_CAP,
+            "truncated": truncated,
             "offset": offset,
             "limit": page_size,
             "has_more": offset + len(jobs) < reachable,
